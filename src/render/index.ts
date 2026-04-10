@@ -8,6 +8,7 @@ import { renderTodosLine } from './todos-line.js';
 import {
   renderIdentityLine,
   renderProjectLine,
+  renderSessionInfoLine,
   renderGitFilesLine,
   renderEnvironmentLine,
   renderUsageLine,
@@ -418,6 +419,14 @@ function renderExpanded(ctx: RenderContext, terminalWidth: number | null = null)
       line,
       isActivity: ACTIVITY_ELEMENTS.has(element),
     });
+
+    // 在 project 行后面插入独立的会话信息行（时长+速度+费用）
+    if (element === 'project') {
+      const infoLine = renderSessionInfoLine(ctx);
+      if (infoLine) {
+        lines.push({ line: infoLine, isActivity: false });
+      }
+    }
 
   }
 

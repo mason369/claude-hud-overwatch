@@ -85,6 +85,31 @@ export function renderProjectLine(ctx: RenderContext): string | null {
     parts.push(label(ctx.extraLabel, colors));
   }
 
+  const customLine = display?.customLine;
+  if (customLine) {
+    parts.push(customColor(customLine, colors));
+  }
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  return parts.join(' \u2502 ');
+}
+
+/**
+ * 渲染会话信息行（时长 + 速度 + 费用），从 project 行拆出避免超宽。
+ * 仅在 expanded 模式下使用。
+ */
+export function renderSessionInfoLine(ctx: RenderContext): string | null {
+  const display = ctx.config?.display;
+  const colors = ctx.config?.colors;
+  const parts: string[] = [];
+
+  if (display?.showDuration !== false && ctx.sessionDuration) {
+    parts.push(label(`⏱️  ${ctx.sessionDuration}`, colors));
+  }
+
   if (display?.showSpeed) {
     const speed = getOutputSpeed(ctx.stdin);
     if (speed !== null) {
@@ -92,18 +117,9 @@ export function renderProjectLine(ctx: RenderContext): string | null {
     }
   }
 
-  if (display?.showDuration !== false && ctx.sessionDuration) {
-    parts.push(label(`⏱️  ${ctx.sessionDuration}`, colors));
-  }
-
   const costEstimate = renderCostEstimate(ctx);
   if (costEstimate) {
     parts.push(costEstimate);
-  }
-
-  const customLine = display?.customLine;
-  if (customLine) {
-    parts.push(customColor(customLine, colors));
   }
 
   if (parts.length === 0) {
