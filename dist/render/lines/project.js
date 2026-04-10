@@ -7,18 +7,27 @@ import { git as gitColor, gitBranch as gitBranchColor, warning as warningColor, 
 import { t } from '../../i18n/index.js';
 import { renderCostEstimate } from './cost.js';
 /** 读取 effortLevel：优先环境变量，其次 settings.json */
+/** 已知 effort 等级映射表：统一首字母大写 */
+const EFFORT_DISPLAY = {
+    max: 'Max',
+    high: 'High',
+    medium: 'Medium',
+    low: 'Low',
+};
 function getEffortLevel() {
     const envEffort = process.env.CLAUDE_CODE_EFFORT_LEVEL;
-    if (envEffort && envEffort !== 'default')
-        return envEffort;
+    if (envEffort && envEffort !== 'default') {
+        return EFFORT_DISPLAY[envEffort.toLowerCase()] ?? envEffort;
+    }
     try {
         const configDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
         const settingsPath = path.join(configDir, 'settings.json');
         const raw = fs.readFileSync(settingsPath, 'utf-8');
         const settings = JSON.parse(raw);
         const effort = settings.effortLevel;
-        if (typeof effort === 'string' && effort !== 'default')
-            return effort;
+        if (typeof effort === 'string' && effort !== 'default') {
+            return EFFORT_DISPLAY[effort.toLowerCase()] ?? effort;
+        }
     }
     catch { /* ignore */ }
     return null;
