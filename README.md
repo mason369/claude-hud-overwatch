@@ -209,15 +209,110 @@ overwatch 增强后的环境行：
 ```
 1 CLAUDE.md | 3 MCPs | 防护: 停止短语×53 研究优先×245 | 事件: 队友空闲×8 | 待机 3
 | 停止防护 违规6 逃避×4 求许可×1 早停×1
-  ↳ 最新违规[13:13:06] 逃避:「not caused by my」
-  ↳ 拦截[15:23:06] Edit→file.ts(not read first)
+  ↳ 最新违规[13:13:06] 逃避:「不是我导致的」 — 模型试图推卸责任
+  ↳ 拦截[15:23:06] Edit file.ts — 编辑前未先Read文件
   ↳ 子代理[16:46:30] 停止 env-line-worker
 ```
 
 - **防护/事件分组** — Hook 按类型分组显示触发次数
-- **最新违规**（红色）— 停止防护拦截的具体模式
+- **最新违规**（红色）— 停止防护拦截的具体模式 + 分类解释
 - **拦截**（黄色）— 研究优先 hook 拦截的文件和原因
 - **子代理**（灰色）— 最新子代理启动/停止事件
+
+## 配套 Hook 配置（推荐）
+
+overwatch 的 Hook 监控功能依赖本地 hook 脚本产生的日志数据。这些 hook 是对 [anthropics/claude-code#42796](https://github.com/anthropics/claude-code/issues/42796) 问题的系统性对策。
+
+### 背景：Issue #42796
+
+该 issue 记录了 Claude Code 在复杂工程任务中的行为退化，主要表现为：
+
+- **逃避所有权** — 模型声称"不是我导致的""预先存在的问题"来推卸责任
+- **反问请求许可** — 模型反复问"要我继续吗？"而非直接执行
+- **过早停止** — 模型宣称"好的停顿点""自然检查点"来提前结束
+- **标签化局限性** — 模型以"已知局限性""超出范围"为由拒绝尝试
+- **会话借口** — 模型以"上下文太长""建议新会话"来放弃当前任务
+- **盲编辑** — 模型未读取文件就直接编辑，导致错误修改
+
+### Hook 脚本说明
+
+将以下 hook 脚本放置在 `~/.claude/hooks/` 目录下：
+
+| 脚本 | Hook 类型 | 作用 |
+|------|----------|------|
+| `stop-phrase-guard.sh` | Stop | **核心防护**：拦截 5 类共 53 个停止短语，阻止模型停止并注入纠正消息 |
+| `research-first-guard.sh` | PreToolUse | **先研究再编辑**：阻止对未 Read 过的文件执行 Edit/Write |
+| `read-tracker.sh` | PostToolUse | 记录 Read 工具读取过的文件路径，供 research-first 检查 |
+| `effort-max-enforcer.sh` | PreToolUse | 阻止任何降低 effortLevel 的操作 |
+| `agent-opus-enforcer.sh` | PreToolUse | 强制 Agent 必须使用 model: "opus" |
+| `hook-counter.sh` | （辅助） | 统计各 hook 触发次数，写入 `hook-counters.csv` |
+| `subagent-logger.sh` | SubagentStart/Stop | 记录子代理启动/停止事件 |
+| `auto-format.sh` | PostToolUse | 代码格式化自动执行 |
+| `post-compact-reinject.sh` | PostCompact | 压缩后重新注入关键上下文 |
+| `teammate-idle-gate.sh` | TeammateIdle | 队友空闲事件计数 |
+| `task-completed-gate.sh` | TaskCompleted | 任务完成事件计数 |
+
+### settings.json 配置
+
+在 `~/.claude/settings.json` 中注册这些 hook：
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      { "matcher": "", "hooks": ["bash ~/.claude/hooks/stop-phrase-guard.sh"] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Edit|Write", "hooks": ["bash ~/.claude/hooks/research-first-guard.sh"] },
+      { "matcher": "Agent", "hooks": ["bash ~/.claude/hooks/agent-opus-enforcer.sh"] },
+      { "matcher": "Bash", "hooks": ["bash ~/.claude/hooks/effort-max-enforcer.sh"] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Read", "hooks": ["bash ~/.claude/hooks/read-tracker.sh"] },
+      { "matcher": "", "hooks": ["bash ~/.claude/hooks/auto-format.sh"] }
+    ],
+    "SubagentStart": [
+      { "matcher": "", "hooks": ["bash ~/.claude/hooks/subagent-logger.sh"] }
+    ],
+    "SubagentStop": [
+      { "matcher": "", "hooks": ["bash ~/.claude/hooks/subagent-logger.sh"] }
+    ],
+    "PostCompact": [
+      { "matcher": "", "hooks": ["bash ~/.claude/hooks/post-compact-reinject.sh"] }
+    ],
+    "TeammateIdle": [
+      { "matcher": "", "hooks": ["bash ~/.claude/hooks/teammate-idle-gate.sh"] }
+    ],
+    "TaskCompleted": [
+      { "matcher": "", "hooks": ["bash ~/.claude/hooks/task-completed-gate.sh"] }
+    ]
+  }
+}
+```
+
+### 配套 CLAUDE.md 规则
+
+在 `~/.claude/CLAUDE.md` 中添加行为约束规则，与 hook 配合使用：
+
+```markdown
+## 反简化 / 反走捷径（issue #42796 对策）
+- **先研究再编辑**：编辑任何文件前，必须先 Read 该文件 + 检查相关引用
+- **禁止"最简单修复"**：不选最省力的方案，选正确的方案
+- **禁止过早停止**：任务未完成不得停止
+- **禁止逃避所有权**：遇到问题就修复，不推卸
+- **禁止会话借口**：不说"在新会话中继续"
+- **完整文件写入限制**：优先使用 Edit，非必要不使用 Write 重写整个文件
+```
+
+### 效果
+
+配置完成后，overwatch 环境行将实时显示：
+- 各 hook 的触发次数（了解模型行为模式）
+- 违规拦截详情（确认防护是否生效）
+- 研究优先拦截记录（确保模型遵循"先读后编辑"）
+- 子代理活动（监控代理调度行为）
+
+这些数据帮助你量化模型的行为质量，及时发现退化趋势。
 
 ## 许可证
 
