@@ -33,6 +33,15 @@ const VIOLATION_CAT_ZH: Record<string, string> = {
   "会话借口": "借口",
 };
 
+/** 违规分类的详细解释 — 显示在最新违规行中帮助理解 */
+const VIOLATION_EXPLAIN: Record<string, string> = {
+  "逃避所有权": "模型试图推卸责任",
+  "请求许可": "模型反问用户而非直接执行",
+  "过早停止": "模型试图提前结束任务",
+  "已知局限性": "模型以局限性为由拒绝尝试",
+  "会话借口": "模型以上下文为由建议新会话",
+};
+
 /** 停止短语英→中翻译（对应 stop-phrase-guard.sh 中定义的各类 pattern） */
 const STOP_PHRASE_ZH: Record<string, string> = {
   // ── 逃避所有权 ──
@@ -158,8 +167,11 @@ function getLastTodayLine(filePath: string, today: string): string | null {
 }
 
 const RESEARCH_REASON_ZH: Record<string, string> = {
-  "not read first": "未先读取",
-  "no references checked": "未检查引用",
+  "not read first": "编辑前未先Read文件",
+  "no references checked": "编辑前未检查引用",
+  "file not in read tracker": "文件不在读取记录中",
+  "basename mismatch": "文件名不匹配读取记录",
+  "stale read": "读取记录已过期",
 };
 
 function parseResearchBlockLine(line: string): HookLatestEntry | null {
@@ -171,7 +183,7 @@ function parseResearchBlockLine(line: string): HookLatestEntry | null {
   const filePath = match[3];
   const fileName = filePath.split(/[/\\]/).pop() ?? filePath;
   const reason = RESEARCH_REASON_ZH[match[4]] ?? match[4];
-  return { time: match[1], hook: "research-first", detail: `${match[2]}→${fileName}(${reason})` };
+  return { time: match[1], hook: "research-first", detail: `${match[2]} ${fileName} — ${reason}` };
 }
 
 const SUBAGENT_EVENT_ZH: Record<string, string> = {
@@ -367,7 +379,9 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
     const v = stats.latestViolation;
     const catZh = VIOLATION_CAT_ZH[v.category] ?? v.category;
     const timeOnly = v.time.split(" ")[1] ?? v.time;
-    const violationDetail = red(`  ↳ 最新违规[${timeOnly}] ${catZh}:「${v.pattern}」`);
+    const explain = VIOLATION_EXPLAIN[v.category] ?? "";
+    const explainSuffix = explain ? ` — ${explain}` : "";
+    const violationDetail = red(`  ↳ 最新违规[${timeOnly}] ${catZh}:「${v.pattern}」${explainSuffix}`);
     line = line ? `${line}\n${violationDetail}` : violationDetail;
   }
 
