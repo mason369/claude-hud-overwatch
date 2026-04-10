@@ -101,13 +101,21 @@ function parseResearchBlockLine(line: string): HookLatestEntry | null {
   return { time: match[1], hook: "research-first", detail: `${match[2]}→${fileName}(${match[4]})` };
 }
 
+const SUBAGENT_EVENT_ZH: Record<string, string> = {
+  SubagentStart: "启动",
+  SubagentStop: "停止",
+};
+
 function parseSubagentLine(line: string): HookLatestEntry | null {
-  // 格式: "[2026-04-10 16:46:30] SubagentStart: explore"
+  // 格式: "[2026-04-10 16:46:30] SubagentStart: explore (aba5ead0)"
   const match = line.match(
     /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$/
   );
   if (!match) return null;
-  return { time: match[1], hook: "subagent-logger", detail: `${match[2]}→${match[3]}` };
+  const eventZh = SUBAGENT_EVENT_ZH[match[2]] ?? match[2];
+  // 去掉 agent ID 后缀（括号内的8位hex），只保留代理类型
+  const agentInfo = match[3].replace(/\s*\([0-9a-f]+\)\s*$/, "").trim();
+  return { time: match[1], hook: "subagent-logger", detail: `${eventZh} ${agentInfo}` };
 }
 
 function getHookStats(): HookStats {
@@ -280,52 +288,30 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
     line = line ? `${line} | ${violationText}` : violationText;
   }
 
-  // 收集各日志源的最新触发详情，按严重程度排序展示最新一条
-  // 优先级: 停止防护违规(红) > 研究优先拦截(黄) > 子代理活动(灰)
-  const latestEntries: { time: string; text: string; severity: "red" | "yellow" | "dim"; priority: number }[] = [];
-
+  // 各类最新触发详情 — 分开显示，不再混为一行
+  // 1) 违规详情：紧跟在违规统计后面（红色）
   if (stats.latestViolation) {
     const v = stats.latestViolation;
     const catZh = VIOLATION_CAT_ZH[v.category] ?? v.category;
-    latestEntries.push({
-      time: v.time,
-      text: `停止防护/${catZh}:「${v.pattern}」`,
-      severity: "red",
-      priority: 3,
-    });
+    const timeOnly = v.time.split(" ")[1] ?? v.time;
+    const violationDetail = red(`  ↳ 最新违规[${timeOnly}] ${catZh}:「${v.pattern}」`);
+    line = line ? `${line}\n${violationDetail}` : violationDetail;
   }
 
+  // 2) 研究优先拦截：独立黄色提示行
   if (stats.latestResearchBlock) {
     const r = stats.latestResearchBlock;
-    latestEntries.push({
-      time: r.time,
-      text: `研究优先拦截: ${r.detail}`,
-      severity: "yellow",
-      priority: 2,
-    });
+    const timeOnly = r.time.split(" ")[1] ?? r.time;
+    const blockDetail = yellow(`  ↳ 拦截[${timeOnly}] ${r.detail}`);
+    line = line ? `${line}\n${blockDetail}` : blockDetail;
   }
 
-  if (stats.latestSubagent) {
+  // 3) 子代理活动：仅在 hook 区域有子代理计数时追加，灰色低优先级
+  if (stats.latestSubagent && hookCountMap.get("subagent-logger")) {
     const s = stats.latestSubagent;
-    latestEntries.push({
-      time: s.time,
-      text: `子代理: ${s.detail}`,
-      severity: "dim",
-      priority: 1,
-    });
-  }
-
-  // 按时间降序取最新一条；同时间则按严重程度降序
-  if (latestEntries.length > 0) {
-    latestEntries.sort((a, b) => {
-      const timeCmp = b.time.localeCompare(a.time);
-      return timeCmp !== 0 ? timeCmp : b.priority - a.priority;
-    });
-    const latest = latestEntries[0];
-    const timeOnly = latest.time.split(" ")[1] ?? latest.time;
-    const colorFn = latest.severity === "red" ? red : latest.severity === "yellow" ? yellow : dim;
-    const latestLine = colorFn(`  ↳ 最新[${timeOnly}] ${latest.text}`);
-    line = line ? `${line}\n${latestLine}` : latestLine;
+    const timeOnly = s.time.split(" ")[1] ?? s.time;
+    const subagentDetail = dim(`  ↳ 子代理[${timeOnly}] ${s.detail}`);
+    line = line ? `${line}\n${subagentDetail}` : subagentDetail;
   }
 
   return line || null;
