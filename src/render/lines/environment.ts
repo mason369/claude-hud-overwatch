@@ -136,6 +136,9 @@ interface HookStats {
   latestViolation: ViolationLogEntry | null;
   latestResearchBlock: HookLatestEntry | null;
   latestSubagent: HookLatestEntry | null;
+  latestGuard: HookLatestEntry | null;
+  latestEvent: HookLatestEntry | null;
+  latestIdle: HookLatestEntry | null;
 }
 
 /** 判断日志时间戳是否在 ttlMs 毫秒以内 */
@@ -207,6 +210,20 @@ const SUBAGENT_EVENT_ZH: Record<string, string> = {
   SubagentStop: "停止",
 };
 
+/** 防护类 hook 详情的中文描述 */
+const GUARD_DETAIL_ZH: Record<string, string> = {
+  "effort-max": "恢复推理深度",
+  "stop-phrase-guard": "停止短语拦截",
+};
+
+/** 事件类 hook 详情的中文描述 */
+const EVENT_DETAIL_ZH: Record<string, string> = {
+  "teammate-idle": "队友",
+  "task-completed": "任务",
+  "auto-format": "自动格式化",
+  "post-compact": "压缩注入",
+};
+
 function parseSubagentLine(line: string): HookLatestEntry | null {
   // 格式: "[2026-04-10 16:46:30] SubagentStart: explore (aba5ead0)"
   const match = line.match(
@@ -217,6 +234,15 @@ function parseSubagentLine(line: string): HookLatestEntry | null {
   // 去掉 agent ID 后缀（括号内的8位hex），只保留代理类型
   const agentInfo = match[3].replace(/\s*\([0-9a-f]+\)\s*$/, "").trim();
   return { time: match[1], hook: "subagent-logger", detail: `${eventZh} ${agentInfo}` };
+}
+
+function parseHookEventLine(line: string): HookLatestEntry | null {
+  // 格式: "[2026-04-10 18:59:38] teammate-idle: some-agent-name"
+  const match = line.match(
+    /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$/
+  );
+  if (!match) return null;
+  return { time: match[1], hook: match[2], detail: match[3] };
 }
 
 /** 从日志行提取时间戳并判断是否在 sessionStart 之后 */
@@ -296,6 +322,33 @@ function getHookStats(sessionStart?: Date): HookStats {
     path.join(logDir, "subagent.log"), today, sessionMs, parseSubagentLine
   );
 
+  // hook-events.log — 提取防护/事件/空闲的最新条目
+  let latestGuard: HookLatestEntry | null = null;
+  let latestEvent: HookLatestEntry | null = null;
+  let latestIdle: HookLatestEntry | null = null;
+
+  try {
+    const eventsFile = path.join(logDir, "hook-events.log");
+    if (fs.existsSync(eventsFile)) {
+      for (const line of fs.readFileSync(eventsFile, "utf-8").split("\n")) {
+        if (!line.startsWith(`[${today}`)) continue;
+        if (sessionMs > 0) {
+          const timeMatch = line.match(/\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+          if (timeMatch && !isAfterSession(timeMatch[1], sessionMs)) continue;
+        }
+        const parsed = parseHookEventLine(line);
+        if (!parsed) continue;
+        if (HOOK_GUARD[parsed.hook]) {
+          latestGuard = parsed;
+        } else if (parsed.hook === "teammate-idle") {
+          latestIdle = parsed;
+        } else if (HOOK_EVENT[parsed.hook] || parsed.hook === "task-completed-debug") {
+          latestEvent = parsed;
+        }
+      }
+    }
+  } catch { /* ignore */ }
+
   const hooks = Array.from(hookMap.entries())
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
@@ -307,6 +360,7 @@ function getHookStats(sessionStart?: Date): HookStats {
   return {
     hooks, violations, totalTriggers, totalViolations,
     latestViolation, latestResearchBlock, latestSubagent,
+    latestGuard, latestEvent, latestIdle,
   };
 }
 
@@ -433,6 +487,38 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
     const timeOnly = s.time.split(" ")[1] ?? s.time;
     const subagentDetail = dim(`  ↳ 子代理[${timeOnly}] ${s.detail}`);
     line = line ? `${line}\n${subagentDetail}` : subagentDetail;
+  }
+
+  // 4) 防护类 hook 最新触发详情（黄色）
+  if (stats.latestGuard && isRecent(stats.latestGuard.time, now, DETAIL_TTL_MS)) {
+    const g = stats.latestGuard;
+    const timeOnly = g.time.split(" ")[1] ?? g.time;
+    const hookZh = HOOK_GUARD[g.hook] ?? g.hook;
+    // 显示原始 detail 而非映射（detail 本身就是有意义的描述如"恢复 effortLevel=max"）
+    const guardDetail = yellow(`  ↳ 防护[${timeOnly}] ${hookZh} → ${g.detail}`);
+    line = line ? `${line}\n${guardDetail}` : guardDetail;
+  }
+
+  // 5) 事件类 hook 最新触发详情（灰色）
+  if (stats.latestEvent && isRecent(stats.latestEvent.time, now, DETAIL_TTL_MS)) {
+    const e = stats.latestEvent;
+    const timeOnly = e.time.split(" ")[1] ?? e.time;
+    const hookZh = HOOK_EVENT[e.hook] ?? e.hook;
+    // 对 task-completed-debug 特殊处理：显示为原始 payload 调试信息
+    const isDebug = e.hook === "task-completed-debug";
+    const prefix = isDebug ? "任务完成(调试)" : (EVENT_DETAIL_ZH[e.hook] ?? hookZh);
+    const eventDetail = dim(`  ↳ 事件[${timeOnly}] ${prefix} → ${e.detail}`);
+    line = line ? `${line}\n${eventDetail}` : eventDetail;
+  }
+
+  // 6) 队友空闲最新详情（灰色）— 显示队友名和对应空闲次数
+  if (stats.latestIdle && isRecent(stats.latestIdle.time, now, DETAIL_TTL_MS)) {
+    const i = stats.latestIdle;
+    const timeOnly = i.time.split(" ")[1] ?? i.time;
+    const totalIdle = hookCountMap.get("teammate-idle") ?? 0;
+    const idleSuffix = totalIdle > 0 ? ` (本会话共 ${totalIdle} 次空闲)` : "";
+    const idleDetail = dim(`  ↳ 待机[${timeOnly}] 最新空闲队友: ${i.detail}${idleSuffix}`);
+    line = line ? `${line}\n${idleDetail}` : idleDetail;
   }
 
   return line || null;
