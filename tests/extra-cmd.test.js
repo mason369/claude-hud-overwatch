@@ -99,7 +99,7 @@ test('parseExtraCmdArg handles command with spaces and quotes', () => {
 // ============================================================================
 
 test('runExtraCmd returns label from valid JSON output', async () => {
-  const result = await runExtraCmd('echo \'{"label": "test"}\'');
+  const result = await runExtraCmd('node -e "process.stdout.write(JSON.stringify({label: \'test\'}))"');
   assert.equal(result, 'test');
 });
 
@@ -120,13 +120,13 @@ test('runExtraCmd returns null for JSON with non-string label', async () => {
 
 test('runExtraCmd truncates long labels with ellipsis', async () => {
   const longLabel = 'a'.repeat(60);
-  const result = await runExtraCmd(`echo '{"label": "${longLabel}"}'`);
+  const result = await runExtraCmd(`node -e "process.stdout.write(JSON.stringify({label: '${longLabel}'}))"`)
   assert.equal(result?.length, 50);
   assert.ok(result?.endsWith('…'));
 });
 
 test('runExtraCmd sanitizes output containing escape sequences', async () => {
-  const result = await runExtraCmd('echo \'{"label": "\\u001b[31mRed\\u001b[0m"}\'');
+  const result = await runExtraCmd('node -e "process.stdout.write(JSON.stringify({label: \'\\u001b[31mRed\\u001b[0m\'}))"');
   assert.equal(result, 'Red');
 });
 
@@ -164,6 +164,6 @@ test('runExtraCmd handles null JSON', async () => {
 });
 
 test('runExtraCmd handles valid JSON with extra whitespace', async () => {
-  const result = await runExtraCmd('echo \'  { "label": "trimmed" }  \'');
+  const result = await runExtraCmd('node -e "process.stdout.write(\'  { \\\"label\\\": \\\"trimmed\\\" }  \')"');
   assert.equal(result, 'trimmed');
 });

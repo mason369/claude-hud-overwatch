@@ -1,11 +1,29 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import type { RenderContext } from '../../types.js';
 import { getModelName, formatModelName, getProviderLabel } from '../../stdin.js';
 import { getOutputSpeed } from '../../speed-tracker.js';
 import { git as gitColor, gitBranch as gitBranchColor, warning as warningColor, critical as criticalColor, label, model as modelColor, project as projectColor, red, green, yellow, dim, custom as customColor } from '../colors.js';
 import { t } from '../../i18n/index.js';
 import { renderCostEstimate } from './cost.js';
+
+/** 读取 effortLevel：优先环境变量，其次 settings.json */
+function getEffortLevel(): string | null {
+  const envEffort = process.env.CLAUDE_CODE_EFFORT_LEVEL;
+  if (envEffort && envEffort !== 'default') return envEffort;
+
+  try {
+    const configDir = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
+    const settingsPath = path.join(configDir, 'settings.json');
+    const raw = fs.readFileSync(settingsPath, 'utf-8');
+    const settings = JSON.parse(raw) as Record<string, unknown>;
+    const effort = settings.effortLevel;
+    if (typeof effort === 'string' && effort !== 'default') return effort;
+  } catch { /* ignore */ }
+
+  return null;
+}
 
 function hyperlink(uri: string, text: string): string {
   const esc = '\x1b';
@@ -21,9 +39,11 @@ export function renderProjectLine(ctx: RenderContext): string | null {
   if (display?.showModel !== false) {
     const model = formatModelName(getModelName(ctx.stdin), ctx.config?.display?.modelFormat, ctx.config?.display?.modelOverride);
     const providerLabel = getProviderLabel(ctx.stdin);
-    const modelQualifier = providerLabel ?? undefined;
-    const modelDisplay = modelQualifier ? `${model} | ${modelQualifier}` : model;
-    parts.push(modelColor(`[${modelDisplay}]`, colors));
+    const effort = getEffortLevel();
+    const badgeParts = [model];
+    if (providerLabel) badgeParts.push(providerLabel);
+    if (effort) badgeParts.push(effort);
+    parts.push(modelColor(`[${badgeParts.join(' | ')}]`, colors));
   }
 
   let projectPart: string | null = null;

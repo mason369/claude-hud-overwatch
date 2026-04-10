@@ -138,7 +138,7 @@ export function formatSessionDuration(
 
   const hours = Math.floor(mins / 60);
   const remainingMins = mins % 60;
-  return `${hours}${h}${remainingMins}${m}`;
+  return remainingMins === 0 ? `${hours}${h}` : `${hours}${h}${remainingMins}${m}`;
 }
 
 const scriptPath = fileURLToPath(import.meta.url);

@@ -1,4 +1,4 @@
-export const UNKNOWN_TERMINAL_WIDTH = 120;
+export const UNKNOWN_TERMINAL_WIDTH = 160;
 
 /** Detect terminal columns from stdout, stderr, or COLUMNS env var. */
 function detectColumns(): number {

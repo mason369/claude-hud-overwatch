@@ -116,6 +116,9 @@ export function getProviderLabel(stdin: StdinData): string | null {
   if (isBedrockModelId(stdin.model?.id)) {
     return 'Bedrock';
   }
+  if (process.env.ANTHROPIC_API_KEY) {
+    return 'API';
+  }
   return null;
 }
 

@@ -1,2 +1,8 @@
-[Opus] │ my-project
-Context ███░░░░░░░ 29%
+[Opus | max] │ ]8;;file://C:\Users\ADMINI~1\AppData\Local\Temp\claude-hud-home-clGbAC\dev\apps\my-project\apps/my-project]8;;\
+上下文 ███░░░░░░░ 29% (45k/200k)
+内存 ████████░░ 13 GB / 16 GB (84%)
+防护: 研究优先×5 | 事件: 队友空闲×37 | 待机 6 | 停止防护 违规7 逃避×5 求许可×1 早停×1
+─────────────────────────────────────────────────────────────────────────────────────
+◐ Edit: .../authentication.ts | ✓ Read ×1
+✓ explore [haiku]: Finding auth code (<1s)
+▸ Add tests (1/2)

@@ -180,7 +180,17 @@ test('getClaudeCodeVersion executes the resolved binary path', async () => {
 
     const version = await getClaudeCodeVersion();
     assert.equal(version, '2.1.81');
-    assert.deepEqual(execCalls, [binaryPath]);
+    // On Windows, .cmd files are invoked via cmd.exe, so the exec call
+    // receives cmd.exe rather than the .cmd path directly
+    if (process.platform === 'win32') {
+      assert.ok(execCalls.length === 1, 'expected one exec call');
+      assert.ok(
+        execCalls[0].toLowerCase().endsWith('cmd.exe'),
+        `expected cmd.exe wrapper on Windows, got: ${execCalls[0]}`
+      );
+    } else {
+      assert.deepEqual(execCalls, [binaryPath]);
+    }
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);

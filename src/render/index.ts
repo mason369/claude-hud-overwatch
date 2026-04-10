@@ -420,11 +420,11 @@ function renderExpanded(ctx: RenderContext, terminalWidth: number | null = null)
       isActivity: ACTIVITY_ELEMENTS.has(element),
     });
 
-    // 在 project 行后面插入独立的会话信息行（时长+速度+费用）
+    // 会话信息（时长+速度+费用）合并到 project 行，终端宽度不足时自动换行
     if (element === 'project') {
       const infoLine = renderSessionInfoLine(ctx);
       if (infoLine) {
-        lines.push({ line: infoLine, isActivity: false });
+        lines[lines.length - 1].line += ` \u2502 ${infoLine}`;
       }
     }
 

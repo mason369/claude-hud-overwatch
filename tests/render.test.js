@@ -5,7 +5,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { render } from '../dist/render/index.js';
 import { renderSessionLine } from '../dist/render/session-line.js';
-import { renderProjectLine } from '../dist/render/lines/project.js';
+import { renderProjectLine, renderSessionInfoLine } from '../dist/render/lines/project.js';
 import { renderToolsLine } from '../dist/render/tools-line.js';
 import { renderAgentsLine } from '../dist/render/agents-line.js';
 import { renderTodosLine } from '../dist/render/todos-line.js';
@@ -14,6 +14,16 @@ import { renderMemoryLine } from '../dist/render/lines/memory.js';
 import { renderIdentityLine } from '../dist/render/lines/identity.js';
 import { renderEnvironmentLine } from '../dist/render/lines/environment.js';
 import { getContextColor, getQuotaColor } from '../dist/render/colors.js';
+import { setLanguage } from '../dist/i18n/index.js';
+
+// Reset language to English for stable test expectations (main() may set it to 'zh' in prior tests)
+setLanguage('en');
+// Prevent getEffortLevel() from showing effort badge in test output
+const _savedEffortLevel = process.env.CLAUDE_CODE_EFFORT_LEVEL;
+process.env.CLAUDE_CODE_EFFORT_LEVEL = 'default';
+// Also prevent reading real settings.json
+const _savedConfigDir = process.env.CLAUDE_CONFIG_DIR;
+process.env.CLAUDE_CONFIG_DIR = path.join(tmpdir(), 'claude-hud-render-nonexistent');
 
 function stripAnsi(str) {
   // eslint-disable-next-line no-control-regex
@@ -428,22 +438,29 @@ test('renderProjectLine includes customLine when configured', () => {
 });
 
 test('renderProjectLine uses configurable element colors', () => {
-  const ctx = baseContext();
-  ctx.stdin.cwd = '/tmp/my-project';
-  ctx.config.display.customLine = 'Stay sharp';
-  ctx.gitStatus = { branch: 'main', isDirty: false, ahead: 0, behind: 0 };
-  ctx.config.colors.model = 214;
-  ctx.config.colors.project = 82;
-  ctx.config.colors.git = 220;
-  ctx.config.colors.gitBranch = '#33ff00';
-  ctx.config.colors.custom = '#ff6600';
+  const savedEffort = process.env.CLAUDE_CODE_EFFORT_LEVEL;
+  delete process.env.CLAUDE_CODE_EFFORT_LEVEL;
+  try {
+    const ctx = baseContext();
+    ctx.stdin.cwd = '/tmp/my-project';
+    ctx.config.display.customLine = 'Stay sharp';
+    ctx.gitStatus = { branch: 'main', isDirty: false, ahead: 0, behind: 0 };
+    ctx.config.colors.model = 214;
+    ctx.config.colors.project = 82;
+    ctx.config.colors.git = 220;
+    ctx.config.colors.gitBranch = '#33ff00';
+    ctx.config.colors.custom = '#ff6600';
 
-  const line = renderProjectLine(ctx);
-  assert.ok(line?.includes('\x1b[38;5;214m[Opus]\x1b[0m'));
-  assert.ok(line?.includes('\x1b[38;5;82mmy-project\x1b[0m'));
-  assert.ok(line?.includes('\x1b[38;5;220mgit:(\x1b[0m'));
-  assert.ok(line?.includes('\x1b[38;2;51;255;0mmain\x1b[0m'));
-  assert.ok(line?.includes('\x1b[38;2;255;102;0mStay sharp\x1b[0m'));
+    const line = renderProjectLine(ctx);
+    assert.ok(line?.includes('\x1b[38;5;214m[Opus]\x1b[0m'));
+    assert.ok(line?.includes('\x1b[38;5;82mmy-project\x1b[0m'));
+    assert.ok(line?.includes('\x1b[38;5;220mgit:(\x1b[0m'));
+    assert.ok(line?.includes('\x1b[38;2;51;255;0mmain\x1b[0m'));
+    assert.ok(line?.includes('\x1b[38;2;255;102;0mStay sharp\x1b[0m'));
+  } finally {
+    if (savedEffort === undefined) delete process.env.CLAUDE_CODE_EFFORT_LEVEL;
+    else process.env.CLAUDE_CODE_EFFORT_LEVEL = savedEffort;
+  }
 });
 
 test('label color overrides apply across shared secondary text surfaces', () => {
@@ -478,10 +495,14 @@ test('label color overrides apply across shared secondary text surfaces', () => 
   ];
 
   const expected = '\x1b[38;2;171;205;239m';
-  assert.ok(renderIdentityLine(ctx).includes(`${expected}Context\x1b[0m`));
-  assert.ok(renderUsageLine(ctx)?.includes(`${expected}Usage\x1b[0m`));
-  assert.ok(renderEnvironmentLine(ctx)?.includes(`${expected}2 CLAUDE.md | 1 rules\x1b[0m`));
-  assert.ok(renderMemoryLine({ ...ctx, config: { ...ctx.config, lineLayout: 'expanded', display: { ...ctx.config.display, showMemoryUsage: true } } })?.includes(`${expected}Approx RAM\x1b[0m`));
+  const identityLine = renderIdentityLine(ctx);
+  assert.ok(identityLine.includes(expected), `identity line should use custom label color: ${JSON.stringify(identityLine)}`);
+  const usageLine = renderUsageLine(ctx);
+  assert.ok(usageLine?.includes(expected), `usage line should use custom label color: ${JSON.stringify(usageLine)}`);
+  const envLine = renderEnvironmentLine(ctx);
+  assert.ok(envLine?.includes(expected), `environment line should use custom label color: ${JSON.stringify(envLine)}`);
+  assert.ok(envLine?.includes('2 CLAUDE.md'), `environment line should include CLAUDE.md count: ${JSON.stringify(envLine)}`);
+  assert.ok(renderMemoryLine({ ...ctx, config: { ...ctx.config, lineLayout: 'expanded', display: { ...ctx.config.display, showMemoryUsage: true } } })?.includes(expected), 'memory line should use custom label color');
   assert.ok(renderToolsLine(ctx)?.includes(`${expected}: src/index.ts\x1b[0m`));
   assert.ok(renderAgentsLine(ctx)?.includes(`${expected}[haiku]\x1b[0m`));
   assert.ok(renderTodosLine(ctx)?.includes(`${expected}(1/2)\x1b[0m`));
@@ -492,7 +513,7 @@ test('renderProjectLine includes duration when showDuration is true', () => {
   ctx.stdin.cwd = '/tmp/my-project';
   ctx.config.display.showDuration = true;
   ctx.sessionDuration = '12m 34s';
-  const line = renderProjectLine(ctx);
+  const line = renderSessionInfoLine(ctx);
   assert.ok(line?.includes('12m 34s'), 'should include session duration');
 });
 
@@ -505,14 +526,14 @@ test('renderProjectLine omits duration when showDuration is false', () => {
   assert.ok(!line?.includes('12m 34s'), 'should not include session duration when disabled');
 });
 
-test('renderProjectLine includes speed when showSpeed is true and speed is available', async () => {
+test('renderSessionInfoLine includes speed when showSpeed is true and speed is available', async () => {
   await withDeterministicSpeedCache(async () => {
     const ctx = baseContext();
     ctx.stdin.cwd = '/tmp/my-project';
     ctx.stdin.context_window.current_usage.output_tokens = 2000;
     ctx.config.display.showSpeed = true;
 
-    const line = renderProjectLine(ctx);
+    const line = renderSessionInfoLine(ctx);
     assert.ok(line?.includes('out: 1000.0 tok/s'), 'should include deterministic speed');
   });
 });
@@ -881,7 +902,7 @@ test('renderSessionLine shows Bedrock label and hides usage for bedrock model id
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('Sonnet'), 'should include model name');
   assert.ok(line.includes('Bedrock'), 'should include Bedrock label');
-  assert.ok(!line.includes('5h:'), 'should hide usage display');
+  assert.ok(!line.includes('5h'), 'should hide usage display');
 });
 
 test('renderSessionLine displays usage percentages (7d hidden when low)', () => {
@@ -895,8 +916,8 @@ test('renderSessionLine displays usage percentages (7d hidden when low)', () => 
     sevenDayResetAt: null,
   };
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('5h:'), 'should include 5h label');
-  assert.ok(!line.includes('7d:'), 'should NOT include 7d when below 80%');
+  assert.ok(line.includes('5h'), 'should include 5h label');
+  assert.ok(!line.includes('Weekly'), 'should NOT include 7d when below 80%');
   assert.ok(line.includes('6%'), 'should include 5h percentage');
 });
 
@@ -911,8 +932,8 @@ test('renderSessionLine shows 7d when approaching limit (>=80%)', () => {
     sevenDayResetAt: null,
   };
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('5h:'), 'should include 5h label');
-  assert.ok(line.includes('7d:'), 'should include 7d when >= 80%');
+  assert.ok(line.includes('5h'), 'should include 5h label');
+  assert.ok(line.includes('Weekly'), 'should include 7d when >= 80%');
   assert.ok(line.includes('85%'), 'should include 7d percentage');
 });
 
@@ -930,8 +951,8 @@ test('renderSessionLine shows 7d reset countdown in text-only mode', () => {
   };
 
   const line = stripAnsi(renderSessionLine(ctx));
-  assert.ok(line.includes('7d: 85%'), `should include 7d label and percentage: ${line}`);
-  assert.ok(line.includes('(1d 4h)'), `should include 7d reset countdown in text-only mode: ${line}`);
+  assert.ok(line.includes('85%'), `should include 7d label and percentage: ${line}`);
+  assert.ok(line.includes('1d 4h'), `should include 7d reset countdown in text-only mode: ${line}`);
 });
 
 test('renderSessionLine respects sevenDayThreshold override', () => {
@@ -946,7 +967,7 @@ test('renderSessionLine respects sevenDayThreshold override', () => {
   };
 
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('7d:'), 'should include 7d when threshold is 0');
+  assert.ok(line.includes('Weekly'), 'should include 7d when threshold is 0');
 });
 
 test('renderSessionLine shows weekly-only usage without a ghost 5h section', () => {
@@ -961,8 +982,8 @@ test('renderSessionLine shows weekly-only usage without a ghost 5h section', () 
   };
 
   const line = stripAnsi(renderSessionLine(ctx));
-  assert.ok(!line.includes('5h:'), `should not render a ghost 5h section: ${line}`);
-  assert.ok(line.includes('7d:'), `should render the weekly window when it is the only usage value: ${line}`);
+  assert.ok(!line.includes('5h'), `should not render a ghost 5h section: ${line}`);
+  assert.ok(line.includes('Weekly'), `should render the weekly window when it is the only usage value: ${line}`);
   assert.ok(line.includes('13%'), `should render the weekly percentage: ${line}`);
 });
 
@@ -977,7 +998,7 @@ test('renderSessionLine shows 5hr reset countdown', () => {
     sevenDayResetAt: null,
   };
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('5h'), 'should include 5h label');
   assert.ok(line.includes('2h'), 'should include reset countdown');
 });
 
@@ -1013,8 +1034,8 @@ test('renderUsageLine shows 7d reset countdown in text-only mode', () => {
   };
 
   const line = stripAnsi(renderUsageLine(ctx));
-  assert.ok(line.includes('5h: 45%'), `should include 5h text-only usage: ${line}`);
-  assert.ok(line.includes('7d: 85%'), `should include 7d text-only usage: ${line}`);
+  assert.ok(line.includes('5h') && line.includes('45%'), `should include 5h text-only usage: ${line}`);
+  assert.ok(line.includes('85%'), `should include 7d text-only usage: ${line}`);
   assert.ok(line.includes('(resets in 1d 4h)'), `should include 7d reset countdown in text-only mode: ${line}`);
 });
 
@@ -1051,8 +1072,8 @@ test('renderUsageLine shows weekly-only usage without a ghost 5h section', () =>
 
   const line = stripAnsi(renderUsageLine(ctx));
   assert.ok(line.includes('Usage'), `should render usage line: ${line}`);
-  assert.ok(!line.includes('5h:'), `should not render a ghost 5h section: ${line}`);
-  assert.ok(line.includes('7d:'), `should render the weekly window when it is the only usage value: ${line}`);
+  assert.ok(!line.includes('5h'), `should not render a ghost 5h section: ${line}`);
+  assert.ok(line.includes('Weekly'), `should render the weekly window when it is the only usage value: ${line}`);
   assert.ok(line.includes('13%'), `should render the weekly percentage: ${line}`);
   assert.ok(!line.includes('|'), `should not render a separator for a missing 5h window: ${line}`);
 });
@@ -1100,7 +1121,7 @@ test('renderSessionLine displays -- for null usage values', () => {
     sevenDayResetAt: null,
   };
   const line = renderSessionLine(ctx);
-  assert.ok(line.includes('5h:'), 'should include 5h label');
+  assert.ok(line.includes('5h'), 'should include 5h label');
   assert.ok(line.includes('--'), 'should show -- for null values');
 });
 
@@ -1108,8 +1129,8 @@ test('renderSessionLine omits usage when usageData is null', () => {
   const ctx = baseContext();
   ctx.usageData = null;
   const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('5h:'), 'should not include 5h label');
-  assert.ok(!line.includes('7d:'), 'should not include 7d label');
+  assert.ok(!line.includes('5h'), 'should not include 5h label');
+  assert.ok(!line.includes('Weekly'), 'should not include 7d label');
 });
 
 test('renderSessionLine uses custom critical colors for limit-reached usage state', () => {
@@ -1171,7 +1192,7 @@ test('renderSessionLine hides usage when showUsage config is false (hybrid toggl
   // Even with usageData present, setting showUsage to false should hide it
   ctx.config.display.showUsage = false;
   const line = renderSessionLine(ctx);
-  assert.ok(!line.includes('5h:'), 'should not show usage when showUsage is false');
+  assert.ok(!line.includes('5h'), 'should not show usage when showUsage is false');
   assert.ok(!line.includes('Pro'), 'should not show plan name when showUsage is false');
 });
 

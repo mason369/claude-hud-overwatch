@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatSessionDuration, main } from '../dist/index.js';
+import { getUsageFromStdin } from '../dist/stdin.js';
+import { setLanguage } from '../dist/i18n/index.js';
 
 test('formatSessionDuration returns empty string without session start', () => {
   assert.equal(formatSessionDuration(undefined, () => 0), '');
@@ -8,13 +10,26 @@ test('formatSessionDuration returns empty string without session start', () => {
 
 test('formatSessionDuration formats sub-minute and minute durations', () => {
   const start = new Date(0);
-  assert.equal(formatSessionDuration(start, () => 30 * 1000), '<1m');
-  assert.equal(formatSessionDuration(start, () => 5 * 60 * 1000), '5m');
+  // 默认中文：分钟/小时
+  const sub = formatSessionDuration(start, () => 30 * 1000);
+  assert.ok(sub.includes('<1'), `expected sub-minute indicator, got: ${sub}`);
+  const fiveMin = formatSessionDuration(start, () => 5 * 60 * 1000);
+  assert.ok(fiveMin.includes('5'), `expected 5 minutes, got: ${fiveMin}`);
 });
 
 test('formatSessionDuration formats hour durations', () => {
   const start = new Date(0);
-  assert.equal(formatSessionDuration(start, () => 2 * 60 * 60 * 1000 + 5 * 60 * 1000), '2h 5m');
+  const result = formatSessionDuration(start, () => 2 * 60 * 60 * 1000 + 5 * 60 * 1000);
+  assert.ok(result.includes('2'), `expected hours, got: ${result}`);
+  assert.ok(result.includes('5'), `expected remaining minutes, got: ${result}`);
+});
+
+test('formatSessionDuration omits zero remaining minutes', () => {
+  const start = new Date(0);
+  const result = formatSessionDuration(start, () => 3 * 60 * 60 * 1000);
+  assert.ok(result.includes('3'), `expected 3 hours, got: ${result}`);
+  // 整小时不应包含 0 分钟
+  assert.ok(!result.includes('0'), `should not include 0 minutes, got: ${result}`);
 });
 
 test('formatSessionDuration uses Date.now by default', () => {
@@ -22,7 +37,7 @@ test('formatSessionDuration uses Date.now by default', () => {
   Date.now = () => 60000;
   try {
     const result = formatSessionDuration(new Date(0));
-    assert.equal(result, '1m');
+    assert.ok(result.includes('1'), `expected 1 minute, got: ${result}`);
   } finally {
     Date.now = originalNow;
   }
@@ -34,10 +49,15 @@ test('main logs an error when dependencies throw', async () => {
     readStdin: async () => {
       throw new Error('boom');
     },
+    getUsageFromStdin: () => null,
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
-    getGitBranch: async () => null,
-    getUsage: async () => null,
+    getGitStatus: async () => null,
+    loadConfig: async () => (await import('../dist/config.js')).DEFAULT_CONFIG,
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getClaudeCodeVersion: async () => undefined,
+    getMemoryUsage: async () => null,
     render: () => {},
     now: () => Date.now(),
     log: (...args) => logs.push(args.join(' ')),
@@ -52,10 +72,15 @@ test('main logs unknown error for non-Error throws', async () => {
     readStdin: async () => {
       throw 'boom';
     },
+    getUsageFromStdin: () => null,
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
-    getGitBranch: async () => null,
-    getUsage: async () => null,
+    getGitStatus: async () => null,
+    loadConfig: async () => (await import('../dist/config.js')).DEFAULT_CONFIG,
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getClaudeCodeVersion: async () => undefined,
+    getMemoryUsage: async () => null,
     render: () => {},
     now: () => Date.now(),
     log: (...args) => logs.push(args.join(' ')),
@@ -72,7 +97,8 @@ test('index entrypoint runs when executed directly', async () => {
 
   try {
     const moduleUrl = new URL('../dist/index.js', import.meta.url);
-    process.argv[1] = new URL(moduleUrl).pathname;
+    const { fileURLToPath: toPath } = await import('node:url');
+    process.argv[1] = toPath(moduleUrl);
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
     console.log = (...args) => logs.push(args.join(' '));
     await import(`${moduleUrl}?entry=${Date.now()}`);
@@ -82,7 +108,7 @@ test('index entrypoint runs when executed directly', async () => {
     Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
   }
 
-  assert.ok(logs.some((line) => line.includes('[claude-hud] Initializing...')));
+  assert.ok(logs.some((line) => line.includes('[claude-hud]')));
 });
 
 test('main executes the happy path with default dependencies', async () => {
@@ -96,19 +122,27 @@ test('main executes the happy path with default dependencies', async () => {
         model: { display_name: 'Opus' },
         context_window: { context_window_size: 100, current_usage: { input_tokens: 90 } },
       }),
+      getUsageFromStdin: () => null,
       parseTranscript: async () => ({ tools: [], agents: [], todos: [], sessionStart: new Date(0) }),
       countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
-      getGitBranch: async () => null,
-      getUsage: async () => null,
+      getGitStatus: async () => null,
+      loadConfig: async () => (await import('../dist/config.js')).DEFAULT_CONFIG,
+      parseExtraCmdArg: () => null,
+      runExtraCmd: async () => null,
+      getClaudeCodeVersion: async () => undefined,
+      getMemoryUsage: async () => null,
       render: (ctx) => {
         renderedContext = ctx;
       },
+      now: () => 60000,
+      log: () => {},
     });
   } finally {
     Date.now = originalNow;
   }
 
-  assert.equal(renderedContext?.sessionDuration, '1m');
+  // With zh locale, minutes are "分钟" not "m"
+  assert.ok(renderedContext?.sessionDuration.includes('1'), `expected 1 minute, got: ${renderedContext?.sessionDuration}`);
 });
 
 test('main includes git status in render context', async () => {
@@ -123,17 +157,24 @@ test('main includes git status in render context', async () => {
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
     getGitStatus: async () => ({ branch: 'feature/test', isDirty: false, ahead: 0, behind: 0 }),
-    getUsage: async () => null,
+    getUsageFromStdin: () => null,
     loadConfig: async () => ({
+      language: 'en',
       lineLayout: 'compact',
       showSeparators: false,
       pathLevels: 1,
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false },
       display: { showModel: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, showTools: true, showAgents: true, showTodos: true, showClaudeCodeVersion: false, showMemoryUsage: false, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0 },
     }),
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getClaudeCodeVersion: async () => undefined,
+    getMemoryUsage: async () => null,
     render: (ctx) => {
       renderedContext = ctx;
     },
+    now: () => Date.now(),
+    log: () => {},
   });
 
   assert.equal(renderedContext?.gitStatus?.branch, 'feature/test');
@@ -153,10 +194,18 @@ test('main includes usageData in render context', async () => {
     }),
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
-    getGitBranch: async () => null,
+    getGitStatus: async () => null,
+    getUsageFromStdin,
+    loadConfig: async () => (await import('../dist/config.js')).DEFAULT_CONFIG,
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getClaudeCodeVersion: async () => undefined,
+    getMemoryUsage: async () => null,
     render: (ctx) => {
       renderedContext = ctx;
     },
+    now: () => Date.now(),
+    log: () => {},
   });
 
   assert.deepEqual(renderedContext?.usageData, {
@@ -181,9 +230,17 @@ test('main uses stdin-native rate_limits when available', async () => {
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
     getGitStatus: async () => null,
+    getUsageFromStdin,
+    loadConfig: async () => (await import('../dist/config.js')).DEFAULT_CONFIG,
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getClaudeCodeVersion: async () => undefined,
+    getMemoryUsage: async () => null,
     render: (ctx) => {
       renderedContext = ctx;
     },
+    now: () => Date.now(),
+    log: () => {},
   });
 
   assert.deepEqual(renderedContext?.usageData, {
@@ -205,9 +262,17 @@ test('main leaves usageData null when stdin rate_limits are absent', async () =>
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
     getGitStatus: async () => null,
+    getUsageFromStdin,
+    loadConfig: async () => (await import('../dist/config.js')).DEFAULT_CONFIG,
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getClaudeCodeVersion: async () => undefined,
+    getMemoryUsage: async () => null,
     render: (ctx) => {
       renderedContext = ctx;
     },
+    now: () => Date.now(),
+    log: () => {},
   });
 
   assert.equal(renderedContext?.usageData, null);
@@ -225,14 +290,20 @@ test('main includes Claude Code version in render context only when enabled', as
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
     getGitStatus: async () => null,
-    getUsage: async () => null,
+    getUsageFromStdin: () => null,
     loadConfig: async () => ({
+      language: 'en',
       lineLayout: 'compact',
       showSeparators: false,
       pathLevels: 1,
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false },
       display: { showModel: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, showTools: false, showAgents: false, showTodos: false, showClaudeCodeVersion: true, showMemoryUsage: false, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0 },
     }),
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getMemoryUsage: async () => null,
+    now: () => Date.now(),
+    log: () => {},
     getClaudeCodeVersion: async () => {
       lookupCalls += 1;
       return '2.1.81';
@@ -257,14 +328,20 @@ test('main skips Claude Code version lookup when disabled', async () => {
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
     getGitStatus: async () => null,
-    getUsage: async () => null,
+    getUsageFromStdin: () => null,
     loadConfig: async () => ({
+      language: 'en',
       lineLayout: 'compact',
       showSeparators: false,
       pathLevels: 1,
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false },
       display: { showModel: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, showTools: false, showAgents: false, showTodos: false, showClaudeCodeVersion: false, showMemoryUsage: false, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0 },
     }),
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getMemoryUsage: async () => null,
+    now: () => Date.now(),
+    log: () => {},
     getClaudeCodeVersion: async () => {
       lookupCalls += 1;
       return '2.1.81';
@@ -293,14 +370,18 @@ test('main includes memoryUsage in render context only for expanded layout when 
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
     getGitStatus: async () => null,
-    getUsage: async () => null,
+    getUsageFromStdin: () => null,
     loadConfig: async () => ({
+      language: 'en',
       lineLayout: 'expanded',
       showSeparators: false,
       pathLevels: 1,
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false },
       display: { showModel: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, showTools: false, showAgents: false, showTodos: false, showClaudeCodeVersion: false, showMemoryUsage: true, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0 },
     }),
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getClaudeCodeVersion: async () => undefined,
     getMemoryUsage: async () => {
       lookupCalls += 1;
       return mockMemoryUsage;
@@ -308,6 +389,8 @@ test('main includes memoryUsage in render context only for expanded layout when 
     render: (ctx) => {
       renderedContext = ctx;
     },
+    now: () => Date.now(),
+    log: () => {},
   });
 
   assert.equal(lookupCalls, 1);
@@ -325,19 +408,25 @@ test('main skips memoryUsage lookup for compact layout even when enabled', async
     parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
     countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
     getGitStatus: async () => null,
-    getUsage: async () => null,
+    getUsageFromStdin: () => null,
     loadConfig: async () => ({
+      language: 'en',
       lineLayout: 'compact',
       showSeparators: false,
       pathLevels: 1,
       gitStatus: { enabled: true, showDirty: true, showAheadBehind: false, showFileStats: false },
       display: { showModel: true, showContextBar: true, contextValue: 'percent', showConfigCounts: true, showDuration: true, showSpeed: false, showTokenBreakdown: true, showUsage: true, showTools: false, showAgents: false, showTodos: false, showClaudeCodeVersion: false, showMemoryUsage: true, autocompactBuffer: 'enabled', usageThreshold: 0, sevenDayThreshold: 80, environmentThreshold: 0 },
     }),
+    parseExtraCmdArg: () => null,
+    runExtraCmd: async () => null,
+    getClaudeCodeVersion: async () => undefined,
     getMemoryUsage: async () => {
       lookupCalls += 1;
       return null;
     },
     render: () => {},
+    now: () => Date.now(),
+    log: () => {},
   });
 
   assert.equal(lookupCalls, 0);

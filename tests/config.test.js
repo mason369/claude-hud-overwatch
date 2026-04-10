@@ -78,35 +78,35 @@ test('getConfigPath returns correct path', () => {
   }
 });
 
-test('mergeConfig defaults showSessionName to false', () => {
+test('mergeConfig defaults showSessionName to true', () => {
   const config = mergeConfig({});
-  assert.equal(config.display.showSessionName, false);
-  assert.equal(DEFAULT_CONFIG.display.showSessionName, false);
-});
-
-test('mergeConfig preserves explicit showSessionName=true', () => {
-  const config = mergeConfig({ display: { showSessionName: true } });
   assert.equal(config.display.showSessionName, true);
+  assert.equal(DEFAULT_CONFIG.display.showSessionName, true);
 });
 
-test('mergeConfig defaults showClaudeCodeVersion to false', () => {
+test('mergeConfig preserves explicit showSessionName=false', () => {
+  const config = mergeConfig({ display: { showSessionName: false } });
+  assert.equal(config.display.showSessionName, false);
+});
+
+test('mergeConfig defaults showClaudeCodeVersion to true', () => {
   const config = mergeConfig({});
-  assert.equal(config.display.showClaudeCodeVersion, false);
-  assert.equal(DEFAULT_CONFIG.display.showClaudeCodeVersion, false);
-});
-
-test('mergeConfig preserves explicit showClaudeCodeVersion=true', () => {
-  const config = mergeConfig({ display: { showClaudeCodeVersion: true } });
   assert.equal(config.display.showClaudeCodeVersion, true);
+  assert.equal(DEFAULT_CONFIG.display.showClaudeCodeVersion, true);
 });
 
-test('mergeConfig defaults showMemoryUsage to false', () => {
+test('mergeConfig preserves explicit showClaudeCodeVersion=false', () => {
+  const config = mergeConfig({ display: { showClaudeCodeVersion: false } });
+  assert.equal(config.display.showClaudeCodeVersion, false);
+});
+
+test('mergeConfig defaults showMemoryUsage to true', () => {
   const config = mergeConfig({});
-  assert.equal(config.display.showMemoryUsage, false);
-  assert.equal(DEFAULT_CONFIG.display.showMemoryUsage, false);
+  assert.equal(config.display.showMemoryUsage, true);
+  assert.equal(DEFAULT_CONFIG.display.showMemoryUsage, true);
 });
 
-test('mergeConfig preserves explicit showMemoryUsage=true', () => {
+test('mergeConfig preserves explicit showMemoryUsage=false', () => {
   const config = mergeConfig({ display: { showMemoryUsage: true } });
   assert.equal(config.display.showMemoryUsage, true);
 });

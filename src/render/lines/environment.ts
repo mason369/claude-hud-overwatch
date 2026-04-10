@@ -9,7 +9,6 @@ const HOOK_GUARD: Record<string, string> = {
   "stop-phrase-guard": "停止短语",
   "research-first": "研究优先",
   "effort-max": "努力锁定",
-  "agent-opus": "代理验证",
 };
 
 const HOOK_EVENT: Record<string, string> = {
@@ -139,6 +138,12 @@ interface HookStats {
   latestSubagent: HookLatestEntry | null;
 }
 
+/** 判断日志时间戳是否在 ttlMs 毫秒以内 */
+function isRecent(timeStr: string, now: number, ttlMs: number): boolean {
+  const ts = new Date(timeStr).getTime();
+  return !isNaN(ts) && (now - ts) < ttlMs;
+}
+
 function parseViolationLine(line: string): ViolationLogEntry | null {
   // 格式: "2026-04-10 13:13:06 [逃避所有权] 触发: "not caused by my""
   const match = line.match(
@@ -150,15 +155,26 @@ function parseViolationLine(line: string): ViolationLogEntry | null {
   return { time: match[1], category: match[2], pattern: patternZh };
 }
 
-function getLastTodayLine(filePath: string, today: string): string | null {
+function getLastSessionLine<T>(
+  filePath: string,
+  today: string,
+  sessionMs: number,
+  parser: (line: string) => T | null,
+): T | null {
   try {
     if (!fs.existsSync(filePath)) return null;
     const lines = fs.readFileSync(filePath, "utf-8").split("\n");
-    let last: string | null = null;
+    let last: T | null = null;
     for (const line of lines) {
-      if (line.startsWith(today) || line.startsWith(`[${today}`)) {
-        last = line;
+      if (!line.startsWith(today) && !line.startsWith(`[${today}`)) continue;
+      // 按会话过滤
+      if (sessionMs > 0) {
+        // 提取时间戳：支持 "YYYY-MM-DD HH:MM:SS" 和 "[YYYY-MM-DD HH:MM:SS]"
+        const timeMatch = line.match(/\[?(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+        if (timeMatch && !isAfterSession(timeMatch[1], sessionMs)) continue;
       }
+      const parsed = parser(line);
+      if (parsed) last = parsed;
     }
     return last;
   } catch {
@@ -203,9 +219,16 @@ function parseSubagentLine(line: string): HookLatestEntry | null {
   return { time: match[1], hook: "subagent-logger", detail: `${eventZh} ${agentInfo}` };
 }
 
-function getHookStats(): HookStats {
+/** 从日志行提取时间戳并判断是否在 sessionStart 之后 */
+function isAfterSession(lineTime: string, sessionStartMs: number): boolean {
+  const ts = new Date(lineTime).getTime();
+  return !isNaN(ts) && ts >= sessionStartMs;
+}
+
+function getHookStats(sessionStart?: Date): HookStats {
   const logDir = path.join(os.homedir(), ".claude", "logs");
   const today = new Date().toISOString().slice(0, 10);
+  const sessionMs = sessionStart?.getTime() ?? 0;
   const hookMap = new Map<string, number>();
   const violationMap = new Map<string, number>();
   let totalTriggers = 0;
@@ -220,12 +243,21 @@ function getHookStats(): HookStats {
       for (const line of fs.readFileSync(counterFile, "utf-8").split("\n")) {
         if (!line.startsWith(today)) continue;
         const parts = line.split(",");
+        // 支持两种格式：
+        //   带时间: "YYYY-MM-DD HH:MM:SS,hookname,1" — 可按会话过滤
+        //   仅日期: "YYYY-MM-DD,hookname,count" — 按天聚合
         const hookName = parts[1] ?? "";
         const count = parseInt(parts[2] ?? "0", 10);
-        if (!isNaN(count) && hookName) {
-          hookMap.set(hookName, (hookMap.get(hookName) ?? 0) + count);
-          totalTriggers += count;
+        if (isNaN(count) || !hookName) continue;
+
+        // 若有精确时间戳且有会话起始，按会话过滤
+        if (sessionMs > 0 && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(line)) {
+          const lineTime = line.slice(0, 19);
+          if (!isAfterSession(lineTime, sessionMs)) continue;
         }
+
+        hookMap.set(hookName, (hookMap.get(hookName) ?? 0) + count);
+        totalTriggers += count;
       }
     }
   } catch { /* ignore */ }
@@ -235,6 +267,11 @@ function getHookStats(): HookStats {
     if (fs.existsSync(violationFile)) {
       for (const line of fs.readFileSync(violationFile, "utf-8").split("\n")) {
         if (!line.startsWith(today)) continue;
+        // 按会话过滤
+        if (sessionMs > 0) {
+          const lineTime = line.slice(0, 19);
+          if (!isAfterSession(lineTime, sessionMs)) continue;
+        }
         totalViolations++;
         const catMatch = line.match(/\[([^\]]+)\]/);
         if (catMatch) {
@@ -249,21 +286,15 @@ function getHookStats(): HookStats {
     }
   } catch { /* ignore */ }
 
-  // 研究优先拦截 — 最新一条
-  const rfLine = getLastTodayLine(
-    path.join(logDir, "research-first-violations.log"), today
+  // 研究优先拦截 — 会话内最新一条
+  latestResearchBlock = getLastSessionLine(
+    path.join(logDir, "research-first-violations.log"), today, sessionMs, parseResearchBlockLine
   );
-  if (rfLine) {
-    latestResearchBlock = parseResearchBlockLine(rfLine);
-  }
 
-  // 子代理活动 — 最新一条
-  const saLine = getLastTodayLine(
-    path.join(logDir, "subagent.log"), today
+  // 子代理活动 — 会话内最新一条
+  latestSubagent = getLastSessionLine(
+    path.join(logDir, "subagent.log"), today, sessionMs, parseSubagentLine
   );
-  if (saLine) {
-    latestSubagent = parseSubagentLine(saLine);
-  }
 
   const hooks = Array.from(hookMap.entries())
     .map(([name, count]) => ({ name, count }))
@@ -307,8 +338,8 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
     parts.push(`style: ${ctx.outputStyle}`);
   }
 
-  // Hook 详情 — 按防护/事件分组，只显示有触发的
-  const stats = getHookStats();
+  // Hook 详情 — 按防护/事件分组，只显示当前会话内的触发
+  const stats = getHookStats(ctx.transcript.sessionStart);
   const hookCountMap = new Map(stats.hooks.map(h => [h.name, h.count]));
 
   const guardParts: string[] = [];
@@ -373,9 +404,12 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
     line = line ? `${line} | ${violationText}` : violationText;
   }
 
-  // 各类最新触发详情 — 分开显示，不再混为一行
+  // 各类最新触发详情 — 10 分钟内的才显示，过期自动隐藏
+  const DETAIL_TTL_MS = 10 * 60 * 1000;
+  const now = Date.now();
+
   // 1) 违规详情：紧跟在违规统计后面（红色）
-  if (stats.latestViolation) {
+  if (stats.latestViolation && isRecent(stats.latestViolation.time, now, DETAIL_TTL_MS)) {
     const v = stats.latestViolation;
     const catZh = VIOLATION_CAT_ZH[v.category] ?? v.category;
     const timeOnly = v.time.split(" ")[1] ?? v.time;
@@ -386,7 +420,7 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
   }
 
   // 2) 研究优先拦截：独立黄色提示行
-  if (stats.latestResearchBlock) {
+  if (stats.latestResearchBlock && isRecent(stats.latestResearchBlock.time, now, DETAIL_TTL_MS)) {
     const r = stats.latestResearchBlock;
     const timeOnly = r.time.split(" ")[1] ?? r.time;
     const blockDetail = yellow(`  ↳ 拦截[${timeOnly}] ${r.detail}`);
@@ -394,7 +428,7 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
   }
 
   // 3) 子代理活动：仅在 hook 区域有子代理计数时追加，灰色低优先级
-  if (stats.latestSubagent && hookCountMap.get("subagent-logger")) {
+  if (stats.latestSubagent && hookCountMap.get("subagent-logger") && isRecent(stats.latestSubagent.time, now, DETAIL_TTL_MS)) {
     const s = stats.latestSubagent;
     const timeOnly = s.time.split(" ")[1] ?? s.time;
     const subagentDetail = dim(`  ↳ 子代理[${timeOnly}] ${s.detail}`);
