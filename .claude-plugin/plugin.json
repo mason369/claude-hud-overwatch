@@ -10,8 +10,8 @@
     "./commands/setup.md",
     "./commands/configure.md"
   ],
-  "homepage": "https://github.com/jarrodwatts/claude-hud",
-  "repository": "https://github.com/jarrodwatts/claude-hud",
+  "homepage": "https://github.com/mason369/claude-hud-zh",
+  "repository": "https://github.com/mason369/claude-hud-zh",
   "license": "MIT",
   "keywords": ["hud", "monitoring", "statusline", "context", "tools", "agents", "todos", "claude-code"]
 }
