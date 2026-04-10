@@ -1,7 +1,7 @@
 {
-  "name": "claude-hud-zh",
-  "description": "Claude Code 实时状态栏 HUD — 上下文、工具、代理、任务进度追踪（中文版）",
-  "version": "0.0.11",
+  "name": "claude-hud-overwatch",
+  "description": "Claude Code 全视状态栏 — 全功能默认开启、Hook 防护监控、违规检测、子代理追踪（中文优先）",
+  "version": "0.0.12",
   "author": {
     "name": "Jarrod Watts",
     "url": "https://github.com/jarrodwatts"
@@ -10,8 +10,8 @@
     "./commands/setup.md",
     "./commands/configure.md"
   ],
-  "homepage": "https://github.com/mason369/claude-hud-zh",
-  "repository": "https://github.com/mason369/claude-hud-zh",
+  "homepage": "https://github.com/mason369/claude-hud-overwatch",
+  "repository": "https://github.com/mason369/claude-hud-overwatch",
   "license": "MIT",
   "keywords": ["hud", "monitoring", "statusline", "context", "tools", "agents", "todos", "claude-code"]
 }

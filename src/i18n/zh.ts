@@ -9,6 +9,7 @@ export const zh: Messages = {
   "label.rules": "规则",
   "label.hooks": "钩子",
   "label.estimatedCost": "估算",
+  "label.cost": "费用",
   "label.tokens": "词元",
   "label.ccVersion": "CC 版本",
   "label.sessionTokenPrefix": "词元",
@@ -24,6 +25,8 @@ export const zh: Messages = {
   "format.cache": "缓存",
   "format.out": "输出",
   "format.tokPerSec": "tok/s",
+  "format.minutes": "分钟",
+  "format.hours": "小时",
 
   // Init
   "init.initializing": "[claude-hud] 正在初始化...",

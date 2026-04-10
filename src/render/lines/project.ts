@@ -78,7 +78,7 @@ export function renderProjectLine(ctx: RenderContext): string | null {
   }
 
   if (display?.showClaudeCodeVersion && ctx.claudeCodeVersion) {
-    parts.push(label(`CC v${ctx.claudeCodeVersion}`, colors));
+    parts.push(label(`${t('label.ccVersion')}${ctx.claudeCodeVersion}`, colors));
   }
 
   if (ctx.extraLabel) {

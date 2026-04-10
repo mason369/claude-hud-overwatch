@@ -1,15 +1,17 @@
 # 更新日志
 
-## [0.1.0-zh] — 2026-04-10
+## [0.0.12-overwatch] — 2026-04-10
 
-### 中文 Fork 版本
+### Overwatch 增强版 (基于上游 v0.0.12)
+- 全功能默认开启（工具、代理、任务、用量、Git 详情等全部 `true`）
 - 完整中文界面（默认中文，可切换英文）
-- Hook 触发统计（防护类/事件类分组）
-- 违规检测详情（最新触发模式+时间）
-- 子代理日志增强（正确记录类型和 ID）
-- 会话令牌中文标签
-- environment 行优化（分类显示更直观）
-- 基于 [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) v0.0.11 fork
+- Hook 防护监控（防护类/事件类分组统计）
+- 违规检测详情（最新触发模式 + 时间 + 分类）
+- 研究优先拦截追踪（拦截的文件和原因）
+- 子代理活动追踪（启动/停止事件中文化）
+- 会话词元中文标签（`Tokens` → `词元`）
+- 同步上游 `label.cost` i18n key
+- 基于 [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) v0.0.12 fork
 
 ---
 

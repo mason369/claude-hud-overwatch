@@ -7,6 +7,7 @@ export type MessageKey =
   | "label.rules"
   | "label.hooks"
   | "label.estimatedCost"
+  | "label.cost"
   | "label.tokens"
   | "label.ccVersion"
   | "label.sessionTokenPrefix"
@@ -20,6 +21,8 @@ export type MessageKey =
   | "format.cache"
   | "format.out"
   | "format.tokPerSec"
+  | "format.minutes"
+  | "format.hours"
   // Init
   | "init.initializing"
   | "init.macosNote";

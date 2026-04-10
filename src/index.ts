@@ -131,12 +131,14 @@ export function formatSessionDuration(
   const ms = now() - sessionStart.getTime();
   const mins = Math.floor(ms / 60000);
 
-  if (mins < 1) return "<1m";
-  if (mins < 60) return `${mins}m`;
+  const m = t('format.minutes');
+  const h = t('format.hours');
+  if (mins < 1) return `<1${m}`;
+  if (mins < 60) return `${mins}${m}`;
 
   const hours = Math.floor(mins / 60);
   const remainingMins = mins % 60;
-  return `${hours}h ${remainingMins}m`;
+  return `${hours}${h}${remainingMins}${m}`;
 }
 
 const scriptPath = fileURLToPath(import.meta.url);

@@ -1,7 +1,7 @@
 {
-  "name": "claude-hud-zh",
+  "name": "claude-hud-overwatch",
   "version": "0.0.12",
-  "description": "Claude Code 实时状态栏 — 上下文健康度、工具活动、代理状态、任务进度（中文版）",
+  "description": "Claude Code 全视状态栏 — 全功能默认开启、Hook 防护监控、违规检测、子代理追踪（中文优先）",
   "type": "module",
   "main": "dist/index.js",
   "files": [
@@ -21,12 +21,16 @@
   "keywords": [
     "claude-code",
     "statusline",
-    "hud"
+    "hud",
+    "overwatch",
+    "hooks",
+    "monitoring",
+    "chinese"
   ],
-  "author": "Jarrod Watts (fork by claude-hud-zh contributors)",
+  "author": "Jarrod Watts (fork by claude-hud-overwatch contributors)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mason369/claude-hud-zh"
+    "url": "https://github.com/mason369/claude-hud-overwatch"
   },
   "license": "MIT",
   "engines": {

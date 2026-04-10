@@ -9,6 +9,7 @@ export const en: Messages = {
   "label.rules": "rules",
   "label.hooks": "hooks",
   "label.estimatedCost": "Est.",
+  "label.cost": "Cost",
   "label.tokens": "Tokens",
   "label.ccVersion": "CC v",
   "label.sessionTokenPrefix": "tok",
@@ -24,6 +25,8 @@ export const en: Messages = {
   "format.cache": "cache",
   "format.out": "out",
   "format.tokPerSec": "tok/s",
+  "format.minutes": "m",
+  "format.hours": "h",
 
   // Init
   "init.initializing": "[claude-hud] Initializing...",

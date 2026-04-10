@@ -33,6 +33,71 @@ const VIOLATION_CAT_ZH: Record<string, string> = {
   "会话借口": "借口",
 };
 
+/** 停止短语英→中翻译（对应 stop-phrase-guard.sh 中定义的各类 pattern） */
+const STOP_PHRASE_ZH: Record<string, string> = {
+  // ── 逃避所有权 ──
+  "not caused by my": "不是我导致的",
+  "pre-existing issue": "预先存在的问题",
+  "pre-existing problem": "预先存在的问题",
+  "pre-existing bug": "预先存在的bug",
+  "already existed before": "之前就已存在",
+  "was already broken": "之前就已损坏",
+  "not related to my changes": "与我的修改无关",
+  "not my fault": "不是我的错",
+  "existed prior to": "在此之前就存在",
+  "unrelated to the current": "与当前无关",
+  "outside my control": "超出我的控制",
+  // ── 请求许可 ──
+  "should i continue": "我应该继续吗",
+  "would you like me to": "你希望我…吗",
+  "shall i proceed": "我可以继续吗",
+  "do you want me to": "你要我…吗",
+  "want me to continue": "要我继续吗",
+  "let me know if you": "如果你…请告诉我",
+  "if you'd like me to": "如果你希望我…",
+  "i can continue if": "如果需要我可以继续",
+  "would you prefer": "你更喜欢…吗",
+  "should i go ahead": "我要继续吗",
+  "awaiting your": "等待你的…",
+  "waiting for your": "等待你的…",
+  // ── 过早停止 ──
+  "good stopping point": "好的停顿点",
+  "natural checkpoint": "自然检查点",
+  "good place to stop": "停下来的好地方",
+  "pause here": "在这里暂停",
+  "leave it here": "就到这里",
+  "stop here for now": "先停在这里",
+  "good point to pause": "暂停的好时机",
+  "take a break": "休息一下",
+  "come back to this": "回头再看",
+  "pick this up later": "稍后继续",
+  "reasonable stopping": "合理的停顿",
+  "i'll stop here": "我先停在这里",
+  "stopping for now": "暂时停止",
+  // ── 已知局限性 ──
+  "known limitation": "已知局限性",
+  "known issue": "已知问题",
+  "future work": "未来工作",
+  "out of scope": "超出范围",
+  "beyond the scope": "超出范围",
+  "todo for later": "以后再说",
+  "left as an exercise": "留作练习",
+  "can be improved later": "以后改进",
+  "for a future": "留待以后",
+  "outside the scope": "范围之外",
+  "not in scope": "不在范围内",
+  // ── 会话借口 ──
+  "continue in a new session": "在新会话中继续",
+  "new conversation": "新对话",
+  "fresh session": "新会话",
+  "running too long": "运行太久了",
+  "context getting large": "上下文变大了",
+  "context is getting": "上下文正在变…",
+  "start a new session": "开始新会话",
+  "context window": "上下文窗口",
+  "running out of context": "上下文快用完了",
+};
+
 interface HookDetail {
   name: string;
   count: number;
@@ -71,7 +136,9 @@ function parseViolationLine(line: string): ViolationLogEntry | null {
     /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[([^\]]+)\] 触发: "(.+)"$/
   );
   if (!match) return null;
-  return { time: match[1], category: match[2], pattern: match[3] };
+  const rawPattern = match[3];
+  const patternZh = STOP_PHRASE_ZH[rawPattern] ?? rawPattern;
+  return { time: match[1], category: match[2], pattern: patternZh };
 }
 
 function getLastTodayLine(filePath: string, today: string): string | null {
@@ -90,6 +157,11 @@ function getLastTodayLine(filePath: string, today: string): string | null {
   }
 }
 
+const RESEARCH_REASON_ZH: Record<string, string> = {
+  "not read first": "未先读取",
+  "no references checked": "未检查引用",
+};
+
 function parseResearchBlockLine(line: string): HookLatestEntry | null {
   // 格式: "2026-04-10 15:23:06 [BLOCKED] Edit on /path/file.ts (not read first)"
   const match = line.match(
@@ -98,7 +170,8 @@ function parseResearchBlockLine(line: string): HookLatestEntry | null {
   if (!match) return null;
   const filePath = match[3];
   const fileName = filePath.split(/[/\\]/).pop() ?? filePath;
-  return { time: match[1], hook: "research-first", detail: `${match[2]}→${fileName}(${match[4]})` };
+  const reason = RESEARCH_REASON_ZH[match[4]] ?? match[4];
+  return { time: match[1], hook: "research-first", detail: `${match[2]}→${fileName}(${reason})` };
 }
 
 const SUBAGENT_EVENT_ZH: Record<string, string> = {
