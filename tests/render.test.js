@@ -30,6 +30,24 @@ function stripAnsi(str) {
   return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
+function restoreEnvVar(name, value) {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+
+  process.env[name] = value;
+}
+
+function formatLogTimestamp(date) {
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function hookMeta(sessionId, transcriptPath) {
+  return `\t${JSON.stringify({ session_id: sessionId, transcript_path: transcriptPath })}`;
+}
+
 function baseContext() {
   return {
     stdin: {
@@ -112,6 +130,23 @@ async function withDeterministicSpeedCache(fn) {
   }
 }
 
+async function withTempHome(fn) {
+  const tempHome = await mkdtemp(path.join(tmpdir(), 'claude-hud-render-home-'));
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+
+  process.env.HOME = tempHome;
+  process.env.USERPROFILE = tempHome;
+
+  try {
+    await fn(tempHome);
+  } finally {
+    restoreEnvVar('HOME', originalHome);
+    restoreEnvVar('USERPROFILE', originalUserProfile);
+    await rm(tempHome, { recursive: true, force: true });
+  }
+}
+
 test('renderSessionLine adds token breakdown when context is high', () => {
   const ctx = baseContext();
   // For 90%: (tokens + 33000) / 200000 = 0.9 → tokens = 147000
@@ -119,6 +154,132 @@ test('renderSessionLine adds token breakdown when context is high', () => {
   const line = renderSessionLine(ctx);
   assert.ok(line.includes('in:'), 'expected token breakdown');
   assert.ok(line.includes('cache:'), 'expected cache breakdown');
+});
+
+test('renderEnvironmentLine isolates concurrent session hook logs using session metadata', async () => {
+  await withTempHome(async homeDir => {
+    const logDir = path.join(homeDir, '.claude', 'logs');
+    await mkdir(logDir, { recursive: true });
+
+    const now = new Date();
+    const sessionStart = new Date(now.getTime() - 4 * 60 * 1000);
+    const currentTime = new Date(now.getTime() - 90 * 1000);
+    const otherTime = new Date(now.getTime() - 60 * 1000);
+    const sessionId = 'session-alpha';
+    const otherSessionId = 'session-beta';
+    const transcriptPath = 'C:/tmp/transcript-alpha.jsonl';
+    const otherTranscriptPath = 'C:/tmp/transcript-beta.jsonl';
+
+    await writeFile(path.join(logDir, 'hook-counters.csv'), [
+      `${formatLogTimestamp(currentTime)},shared-hook,2${hookMeta(sessionId, transcriptPath)}`,
+      `${formatLogTimestamp(currentTime)},subagent-logger,1${hookMeta(sessionId, transcriptPath)}`,
+      `${formatLogTimestamp(otherTime)},shared-hook,3${hookMeta(otherSessionId, otherTranscriptPath)}`,
+      `${formatLogTimestamp(otherTime)},subagent-logger,1${hookMeta(otherSessionId, otherTranscriptPath)}`,
+    ].join('\n'), 'utf8');
+
+    await writeFile(path.join(logDir, 'hook-events.log'), [
+      `[${formatLogTimestamp(currentTime)}] task-completed: alpha-task${hookMeta(sessionId, transcriptPath)}`,
+      `[${formatLogTimestamp(otherTime)}] task-completed: beta-task${hookMeta(otherSessionId, otherTranscriptPath)}`,
+    ].join('\n'), 'utf8');
+
+    await writeFile(path.join(logDir, 'subagent.log'), [
+      `[${formatLogTimestamp(currentTime)}] SubagentStop: alpha-worker (abc12345)${hookMeta(sessionId, transcriptPath)}`,
+      `[${formatLogTimestamp(otherTime)}] SubagentStop: beta-worker (def67890)${hookMeta(otherSessionId, otherTranscriptPath)}`,
+    ].join('\n'), 'utf8');
+
+    await writeFile(path.join(logDir, 'stop-phrase-violations.log'), [
+      `${formatLogTimestamp(currentTime)} [请求许可] 触发: "current phrase"${hookMeta(sessionId, transcriptPath)}`,
+      `${formatLogTimestamp(otherTime)} [请求许可] 触发: "other phrase"${hookMeta(otherSessionId, otherTranscriptPath)}`,
+    ].join('\n'), 'utf8');
+
+    const ctx = baseContext();
+    ctx.stdin.session_id = sessionId;
+    ctx.stdin.transcript_path = transcriptPath;
+    ctx.transcript.sessionStart = sessionStart;
+
+    const line = stripAnsi(renderEnvironmentLine(ctx) ?? '');
+
+    assert.ok(line.includes('shared-hook×2'), `expected current-session hook count only: ${line}`);
+    assert.ok(!line.includes('shared-hook×5'), `should not aggregate concurrent session counts: ${line}`);
+    assert.ok(line.includes('alpha-task'), `expected current-session event detail: ${line}`);
+    assert.ok(!line.includes('beta-task'), `should ignore concurrent session event detail: ${line}`);
+    assert.ok(line.includes('alpha-worker'), `expected current-session subagent detail: ${line}`);
+    assert.ok(!line.includes('beta-worker'), `should ignore concurrent session subagent detail: ${line}`);
+    assert.ok(line.includes('current phrase'), `expected current-session violation detail: ${line}`);
+    assert.ok(!line.includes('other phrase'), `should ignore concurrent session violation detail: ${line}`);
+  });
+});
+
+test('renderEnvironmentLine falls back to sessionStart for legacy hook lines without metadata', async () => {
+  await withTempHome(async homeDir => {
+    const logDir = path.join(homeDir, '.claude', 'logs');
+    await mkdir(logDir, { recursive: true });
+
+    const now = new Date();
+    const sessionStart = new Date(now.getTime() - 3 * 60 * 1000);
+    const beforeSession = new Date(sessionStart.getTime() - 30 * 1000);
+    const afterSession = new Date(sessionStart.getTime() + 30 * 1000);
+    const otherTime = new Date(sessionStart.getTime() + 45 * 1000);
+    const sessionId = 'session-legacy';
+    const transcriptPath = 'C:/tmp/transcript-legacy.jsonl';
+
+    await writeFile(path.join(logDir, 'hook-counters.csv'), [
+      `${formatLogTimestamp(beforeSession)},legacy-hook,7`,
+      `${formatLogTimestamp(afterSession)},legacy-hook,2`,
+      `${formatLogTimestamp(otherTime)},other-hook,5${hookMeta('other-session', 'C:/tmp/other.jsonl')}`,
+    ].join('\n'), 'utf8');
+
+    await writeFile(path.join(logDir, 'hook-events.log'), [
+      `[${formatLogTimestamp(beforeSession)}] task-completed: too-early-task`,
+      `[${formatLogTimestamp(afterSession)}] task-completed: current-legacy-task`,
+      `[${formatLogTimestamp(otherTime)}] task-completed: other-session-task${hookMeta('other-session', 'C:/tmp/other.jsonl')}`,
+    ].join('\n'), 'utf8');
+
+    const ctx = baseContext();
+    ctx.stdin.session_id = sessionId;
+    ctx.stdin.transcript_path = transcriptPath;
+    ctx.transcript.sessionStart = sessionStart;
+
+    const line = stripAnsi(renderEnvironmentLine(ctx) ?? '');
+
+    assert.ok(line.includes('legacy-hook×2'), `expected legacy lines after session start to remain visible: ${line}`);
+    assert.ok(!line.includes('legacy-hook×9'), `should not include legacy lines from before session start: ${line}`);
+    assert.ok(line.includes('current-legacy-task'), `expected legacy event after session start: ${line}`);
+    assert.ok(!line.includes('too-early-task'), `should ignore legacy event from before session start: ${line}`);
+    assert.ok(!line.includes('other-session-task'), `should still prefer exact metadata matches when present: ${line}`);
+    assert.ok(!line.includes('other-hook×5'), `should ignore metadata-tagged lines from another session: ${line}`);
+  });
+});
+
+test('renderEnvironmentLine ignores legacy hook lines when the current session has no timing fallback yet', async () => {
+  await withTempHome(async homeDir => {
+    const logDir = path.join(homeDir, '.claude', 'logs');
+    await mkdir(logDir, { recursive: true });
+
+    const now = new Date();
+    const currentTime = new Date(now.getTime() - 45 * 1000);
+    const transcriptPath = 'C:/tmp/transcript-current.jsonl';
+
+    await writeFile(path.join(logDir, 'hook-counters.csv'), [
+      `${formatLogTimestamp(currentTime)},legacy-hook,4`,
+      `${formatLogTimestamp(currentTime)},current-hook,2${hookMeta('current-session', transcriptPath)}`,
+    ].join('\n'), 'utf8');
+
+    await writeFile(path.join(logDir, 'hook-events.log'), [
+      `[${formatLogTimestamp(currentTime)}] task-completed: legacy-task`,
+      `[${formatLogTimestamp(currentTime)}] task-completed: current-task${hookMeta('current-session', transcriptPath)}`,
+    ].join('\n'), 'utf8');
+
+    const ctx = baseContext();
+    ctx.stdin.transcript_path = transcriptPath;
+
+    const line = stripAnsi(renderEnvironmentLine(ctx) ?? '');
+
+    assert.ok(line.includes('current-hook'), `expected metadata-matched hook lines to remain visible: ${line}`);
+    assert.ok(line.includes('current-task'), `expected metadata-matched event detail to remain visible: ${line}`);
+    assert.ok(!line.includes('legacy-hook脳4'), `should not include legacy hook lines without session timing fallback: ${line}`);
+    assert.ok(!line.includes('legacy-task'), `should not include legacy event lines without session timing fallback: ${line}`);
+  });
 });
 
 test('renderSessionLine includes duration and formats large tokens', () => {
@@ -515,6 +676,61 @@ test('renderProjectLine includes duration when showDuration is true', () => {
   ctx.sessionDuration = '12m 34s';
   const line = renderSessionInfoLine(ctx);
   assert.ok(line?.includes('12m 34s'), 'should include session duration');
+});
+
+test('renderSessionLine shows native cost when stdin cost.total_cost_usd is available', () => {
+  const ctx = baseContext();
+  ctx.config.display.showCost = true;
+  ctx.stdin.cost = { total_cost_usd: 5.47 };
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.ok(line.includes('Cost $5.47'));
+});
+
+test('renderSessionInfoLine falls back to an estimate when native cost is absent', () => {
+  const ctx = baseContext();
+  ctx.config.display.showCost = true;
+  ctx.stdin.model = { display_name: 'Claude Opus 4.5' };
+  ctx.transcript.sessionTokens = {
+    inputTokens: 100000,
+    cacheCreationTokens: 10000,
+    cacheReadTokens: 20000,
+    outputTokens: 50000,
+  };
+
+  const line = stripAnsi(renderSessionInfoLine(ctx) ?? '');
+  assert.ok(line.includes('Est. $5.47'), `expected fallback estimate, got: ${line}`);
+});
+
+test('renderProjectLine hides cost for provider-routed sessions', () => {
+  const ctx = baseContext();
+  ctx.stdin.cwd = '/tmp/my-project';
+  ctx.config.display.showCost = true;
+  ctx.stdin.model = { id: 'anthropic.claude-sonnet-4-20250514-v1:0' };
+  ctx.stdin.cost = { total_cost_usd: 0 };
+  ctx.transcript.sessionTokens = {
+    inputTokens: 100000,
+    cacheCreationTokens: 10000,
+    cacheReadTokens: 20000,
+    outputTokens: 50000,
+  };
+
+  const line = stripAnsi(renderProjectLine(ctx));
+  assert.ok(!line.includes('Cost '), 'cost should stay hidden when billing is routed through the provider');
+});
+
+test('renderSessionInfoLine translates native cost label when Chinese is enabled', () => {
+  const ctx = baseContext();
+  ctx.config.display.showCost = true;
+  ctx.stdin.cost = { total_cost_usd: 5.47 };
+
+  setLanguage('zh');
+  try {
+    const line = stripAnsi(renderSessionInfoLine(ctx) ?? '');
+    assert.ok(line.includes('费用 $5.47'));
+  } finally {
+    setLanguage('en');
+  }
 });
 
 test('renderProjectLine omits duration when showDuration is false', () => {
@@ -935,6 +1151,38 @@ test('renderSessionLine shows 7d when approaching limit (>=80%)', () => {
   assert.ok(line.includes('5h'), 'should include 5h label');
   assert.ok(line.includes('Weekly'), 'should include 7d when >= 80%');
   assert.ok(line.includes('85%'), 'should include 7d percentage');
+});
+
+test('renderSessionLine prefixes compact usage bars with a Usage label', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = true;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 10,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.match(line, /\| Usage .*45%/, `should prefix compact usage bars with Usage: ${line}`);
+});
+
+test('renderSessionLine keeps both compact usage windows labeled in bar mode', () => {
+  const ctx = baseContext();
+  ctx.config.display.usageBarEnabled = true;
+  ctx.config.display.sevenDayThreshold = 80;
+  ctx.usageData = {
+    planName: 'Pro',
+    fiveHour: 45,
+    sevenDay: 85,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  const line = stripAnsi(renderSessionLine(ctx));
+  assert.match(line, /\| Usage .*45%/, `should keep the 5h usage window labeled: ${line}`);
+  assert.match(line, /\| Weekly .*85%/, `should keep the weekly usage window labeled: ${line}`);
 });
 
 test('renderSessionLine shows 7d reset countdown in text-only mode', () => {

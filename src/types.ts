@@ -2,6 +2,7 @@ import type { HudConfig } from './config.js';
 import type { GitStatus } from './git.js';
 
 export interface StdinData {
+  session_id?: string;
   transcript_path?: string;
   cwd?: string;
   model?: {
@@ -20,6 +21,13 @@ export interface StdinData {
     used_percentage?: number | null;
     remaining_percentage?: number | null;
   };
+  cost?: {
+    total_cost_usd?: number | null;
+    total_duration_ms?: number | null;
+    total_api_duration_ms?: number | null;
+    total_lines_added?: number | null;
+    total_lines_removed?: number | null;
+  } | null;
   rate_limits?: {
     five_hour?: {
       used_percentage?: number | null;

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { _setCreateReadStreamForTests, parseTranscript } from '../dist/transcript.js';
 import { countConfigs } from '../dist/config-reader.js';
 import { getContextPercent, getBufferedPercent, getModelName, getProviderLabel, getUsageFromStdin, isBedrockModelId } from '../dist/stdin.js';
+import { estimateSessionCost, resolveSessionCost, formatUsd } from '../dist/cost.js';
 import * as fs from 'node:fs';
 
 function restoreEnvVar(name, value) {
@@ -273,6 +274,74 @@ test('getModelName precedence: trimmed display name, then normalized bedrock lab
   assert.equal(getModelName({ model: { id: '  sonnet-456  ' } }), 'sonnet-456');
   assert.equal(getModelName({ model: { display_name: '   ', id: '   ' } }), 'Unknown');
   assert.equal(getModelName({}), 'Unknown');
+});
+
+test('estimateSessionCost calculates offline Anthropic pricing from session tokens', () => {
+  const estimate = estimateSessionCost(
+    { model: { display_name: 'Claude Sonnet 4.5' } },
+    {
+      inputTokens: 100000,
+      cacheCreationTokens: 10000,
+      cacheReadTokens: 20000,
+      outputTokens: 50000,
+    },
+  );
+
+  assert.ok(estimate, 'expected a cost estimate');
+  assert.equal(formatUsd(estimate.totalUsd), '$1.09');
+});
+
+test('resolveSessionCost prefers stdin native cost when present', () => {
+  const cost = resolveSessionCost(
+    {
+      model: { display_name: 'Claude Sonnet 4.5' },
+      cost: { total_cost_usd: 1.23 },
+    },
+    {
+      inputTokens: 100000,
+      cacheCreationTokens: 10000,
+      cacheReadTokens: 20000,
+      outputTokens: 50000,
+    },
+  );
+
+  assert.deepEqual(cost, {
+    totalUsd: 1.23,
+    source: 'native',
+  });
+});
+
+test('resolveSessionCost falls back to an estimate when native cost is absent', () => {
+  const cost = resolveSessionCost(
+    { model: { display_name: 'Claude Opus 4.5' } },
+    {
+      inputTokens: 100000,
+      cacheCreationTokens: 10000,
+      cacheReadTokens: 20000,
+      outputTokens: 50000,
+    },
+  );
+
+  assert.ok(cost, 'expected a fallback cost');
+  assert.equal(cost.source, 'estimate');
+  assert.equal(formatUsd(cost.totalUsd), '$5.47');
+});
+
+test('resolveSessionCost hides cost for provider-routed sessions even when native cost exists', () => {
+  const cost = resolveSessionCost(
+    {
+      model: { id: 'anthropic.claude-sonnet-4-20250514-v1:0' },
+      cost: { total_cost_usd: 1.23 },
+    },
+    {
+      inputTokens: 100000,
+      cacheCreationTokens: 10000,
+      cacheReadTokens: 20000,
+      outputTokens: 50000,
+    },
+  );
+
+  assert.equal(cost, null);
 });
 
 test('bedrock model detection recognizes bedrock ids', () => {

@@ -172,10 +172,11 @@ export function renderSessionLine(ctx) {
                             barWidth,
                             forceLabel: true,
                         });
-                        parts.push(`${fiveHourPart} | ${sevenDayPart}`);
+                        parts.push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
+                        parts.push(sevenDayPart);
                     }
                     else {
-                        parts.push(fiveHourPart);
+                        parts.push(`${label(t('label.usage'), colors)} ${fiveHourPart}`);
                     }
                 }
             }

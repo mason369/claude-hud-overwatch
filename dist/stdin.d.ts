@@ -1,6 +1,14 @@
 import type { StdinData, UsageData } from './types.js';
 import type { ModelFormatMode } from './config.js';
-export declare function readStdin(): Promise<StdinData | null>;
+type StdinStream = Pick<NodeJS.ReadStream, 'setEncoding' | 'on' | 'off' | 'pause'> & {
+    isTTY?: boolean;
+};
+type ReadStdinOptions = {
+    firstByteTimeoutMs?: number;
+    idleTimeoutMs?: number;
+    maxBytes?: number;
+};
+export declare function readStdin(stream?: StdinStream, options?: ReadStdinOptions): Promise<StdinData | null>;
 export declare function getTotalTokens(stdin: StdinData): number;
 export declare function getContextPercent(stdin: StdinData): number;
 export declare function getBufferedPercent(stdin: StdinData): number;
@@ -27,4 +35,5 @@ export declare function stripContextSuffix(name: string): string;
  *   short:   Strip context suffix AND leading "Claude " prefix (e.g. "Opus 4.6")
  */
 export declare function formatModelName(name: string, format?: ModelFormatMode, override?: string): string;
+export {};
 //# sourceMappingURL=stdin.d.ts.map

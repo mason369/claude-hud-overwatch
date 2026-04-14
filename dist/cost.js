@@ -76,6 +76,33 @@ export function estimateSessionCost(stdin, sessionTokens) {
         outputUsd,
     };
 }
+function getNativeCostUsd(stdin) {
+    const nativeCost = stdin.cost?.total_cost_usd;
+    if (typeof nativeCost !== 'number' || !Number.isFinite(nativeCost)) {
+        return null;
+    }
+    if (getProviderLabel(stdin)) {
+        return null;
+    }
+    return nativeCost;
+}
+export function resolveSessionCost(stdin, sessionTokens) {
+    const nativeCostUsd = getNativeCostUsd(stdin);
+    if (nativeCostUsd !== null) {
+        return {
+            totalUsd: nativeCostUsd,
+            source: 'native',
+        };
+    }
+    const estimate = estimateSessionCost(stdin, sessionTokens);
+    if (!estimate) {
+        return null;
+    }
+    return {
+        totalUsd: estimate.totalUsd,
+        source: 'estimate',
+    };
+}
 export function formatUsd(amount) {
     if (amount >= 1) {
         return `$${amount.toFixed(2)}`;

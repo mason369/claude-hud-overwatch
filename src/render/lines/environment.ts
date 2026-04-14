@@ -128,6 +128,17 @@ interface HookLatestEntry {
   detail: string;
 }
 
+interface HookLogMeta {
+  sessionId?: string;
+  transcriptPath?: string;
+}
+
+interface CurrentHookSession {
+  sessionId?: string;
+  transcriptPath?: string;
+  sessionMs: number;
+}
+
 interface HookStats {
   hooks: HookDetail[];
   violations: ViolationDetail[];
@@ -147,6 +158,83 @@ function isRecent(timeStr: string, now: number, ttlMs: number): boolean {
   return !isNaN(ts) && (now - ts) < ttlMs;
 }
 
+function parseLogLineMetadata(line: string): { baseLine: string; meta: HookLogMeta } {
+  const [baseLine, metaJson] = line.split("\t", 2);
+  if (!metaJson) {
+    return { baseLine: line, meta: {} };
+  }
+
+  try {
+    const parsed = JSON.parse(metaJson) as Record<string, unknown>;
+    return {
+      baseLine,
+      meta: {
+        sessionId: typeof parsed.session_id === "string" && parsed.session_id ? parsed.session_id : undefined,
+        transcriptPath: typeof parsed.transcript_path === "string" && parsed.transcript_path ? parsed.transcript_path : undefined,
+      },
+    };
+  } catch {
+    return { baseLine: line, meta: {} };
+  }
+}
+
+function normalizeTranscriptPath(transcriptPath?: string): string | null {
+  if (!transcriptPath) {
+    return null;
+  }
+
+  const trimmed = transcriptPath.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = path.normalize(trimmed).replace(/\\/g, "/");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+function matchesHookSession(
+  meta: HookLogMeta,
+  session: CurrentHookSession,
+  lineTime?: string,
+): boolean {
+  const hasCurrentIdentity = Boolean(session.sessionId || session.transcriptPath);
+  const hasLineIdentity = Boolean(meta.sessionId || meta.transcriptPath);
+
+  if (hasLineIdentity) {
+    let compared = false;
+
+    if (session.sessionId && meta.sessionId) {
+      compared = true;
+      if (session.sessionId !== meta.sessionId) {
+        return false;
+      }
+    }
+
+    const currentTranscriptPath = normalizeTranscriptPath(session.transcriptPath);
+    const lineTranscriptPath = normalizeTranscriptPath(meta.transcriptPath);
+    if (currentTranscriptPath && lineTranscriptPath) {
+      compared = true;
+      if (currentTranscriptPath !== lineTranscriptPath) {
+        return false;
+      }
+    }
+
+    if (compared) {
+      return true;
+    }
+
+    if (hasCurrentIdentity) {
+      return false;
+    }
+  }
+
+  if (session.sessionMs > 0 && lineTime) {
+    return isAfterSession(lineTime, session.sessionMs);
+  }
+
+  return false;
+}
+
 function parseViolationLine(line: string): ViolationLogEntry | null {
   // 格式: "2026-04-10 13:13:06 [逃避所有权] 触发: "not caused by my""
   const match = line.match(
@@ -161,7 +249,7 @@ function parseViolationLine(line: string): ViolationLogEntry | null {
 function getLastSessionLine<T>(
   filePath: string,
   today: string,
-  sessionMs: number,
+  session: CurrentHookSession,
   parser: (line: string) => T | null,
 ): T | null {
   try {
@@ -169,14 +257,11 @@ function getLastSessionLine<T>(
     const lines = fs.readFileSync(filePath, "utf-8").split("\n");
     let last: T | null = null;
     for (const line of lines) {
-      if (!line.startsWith(today) && !line.startsWith(`[${today}`)) continue;
-      // 按会话过滤
-      if (sessionMs > 0) {
-        // 提取时间戳：支持 "YYYY-MM-DD HH:MM:SS" 和 "[YYYY-MM-DD HH:MM:SS]"
-        const timeMatch = line.match(/\[?(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
-        if (timeMatch && !isAfterSession(timeMatch[1], sessionMs)) continue;
-      }
-      const parsed = parser(line);
+      const { baseLine, meta } = parseLogLineMetadata(line);
+      if (!baseLine.startsWith(today) && !baseLine.startsWith(`[${today}`)) continue;
+      const timeMatch = baseLine.match(/\[?(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+      if (!matchesHookSession(meta, session, timeMatch?.[1])) continue;
+      const parsed = parser(baseLine);
       if (parsed) last = parsed;
     }
     return last;
@@ -251,10 +336,9 @@ function isAfterSession(lineTime: string, sessionStartMs: number): boolean {
   return !isNaN(ts) && ts >= sessionStartMs;
 }
 
-function getHookStats(sessionStart?: Date): HookStats {
+function getHookStats(session: CurrentHookSession): HookStats {
   const logDir = path.join(os.homedir(), ".claude", "logs");
   const today = new Date().toISOString().slice(0, 10);
-  const sessionMs = sessionStart?.getTime() ?? 0;
   const hookMap = new Map<string, number>();
   const violationMap = new Map<string, number>();
   let totalTriggers = 0;
@@ -267,8 +351,9 @@ function getHookStats(sessionStart?: Date): HookStats {
     const counterFile = path.join(logDir, "hook-counters.csv");
     if (fs.existsSync(counterFile)) {
       for (const line of fs.readFileSync(counterFile, "utf-8").split("\n")) {
-        if (!line.startsWith(today)) continue;
-        const parts = line.split(",");
+        const { baseLine, meta } = parseLogLineMetadata(line);
+        if (!baseLine.startsWith(today)) continue;
+        const parts = baseLine.split(",");
         // 支持两种格式：
         //   带时间: "YYYY-MM-DD HH:MM:SS,hookname,1" — 可按会话过滤
         //   仅日期: "YYYY-MM-DD,hookname,count" — 按天聚合
@@ -276,10 +361,11 @@ function getHookStats(sessionStart?: Date): HookStats {
         const count = parseInt(parts[2] ?? "0", 10);
         if (isNaN(count) || !hookName) continue;
 
-        // 若有精确时间戳且有会话起始，按会话过滤
-        if (sessionMs > 0 && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(line)) {
-          const lineTime = line.slice(0, 19);
-          if (!isAfterSession(lineTime, sessionMs)) continue;
+        const lineTime = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(baseLine)
+          ? baseLine.slice(0, 19)
+          : undefined;
+        if (!matchesHookSession(meta, session, lineTime)) {
+          continue;
         }
 
         hookMap.set(hookName, (hookMap.get(hookName) ?? 0) + count);
@@ -292,19 +378,19 @@ function getHookStats(sessionStart?: Date): HookStats {
     const violationFile = path.join(logDir, "stop-phrase-violations.log");
     if (fs.existsSync(violationFile)) {
       for (const line of fs.readFileSync(violationFile, "utf-8").split("\n")) {
-        if (!line.startsWith(today)) continue;
-        // 按会话过滤
-        if (sessionMs > 0) {
-          const lineTime = line.slice(0, 19);
-          if (!isAfterSession(lineTime, sessionMs)) continue;
+        const { baseLine, meta } = parseLogLineMetadata(line);
+        if (!baseLine.startsWith(today)) continue;
+        const lineTime = baseLine.slice(0, 19);
+        if (!matchesHookSession(meta, session, lineTime)) {
+          continue;
         }
         totalViolations++;
-        const catMatch = line.match(/\[([^\]]+)\]/);
+        const catMatch = baseLine.match(/\[([^\]]+)\]/);
         if (catMatch) {
           const cat = catMatch[1];
           violationMap.set(cat, (violationMap.get(cat) ?? 0) + 1);
         }
-        const parsed = parseViolationLine(line);
+        const parsed = parseViolationLine(baseLine);
         if (parsed) {
           latestViolation = parsed;
         }
@@ -314,12 +400,12 @@ function getHookStats(sessionStart?: Date): HookStats {
 
   // 研究优先拦截 — 会话内最新一条
   latestResearchBlock = getLastSessionLine(
-    path.join(logDir, "research-first-violations.log"), today, sessionMs, parseResearchBlockLine
+    path.join(logDir, "research-first-violations.log"), today, session, parseResearchBlockLine
   );
 
   // 子代理活动 — 会话内最新一条
   latestSubagent = getLastSessionLine(
-    path.join(logDir, "subagent.log"), today, sessionMs, parseSubagentLine
+    path.join(logDir, "subagent.log"), today, session, parseSubagentLine
   );
 
   // hook-events.log — 提取防护/事件/空闲的最新条目
@@ -331,12 +417,13 @@ function getHookStats(sessionStart?: Date): HookStats {
     const eventsFile = path.join(logDir, "hook-events.log");
     if (fs.existsSync(eventsFile)) {
       for (const line of fs.readFileSync(eventsFile, "utf-8").split("\n")) {
-        if (!line.startsWith(`[${today}`)) continue;
-        if (sessionMs > 0) {
-          const timeMatch = line.match(/\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
-          if (timeMatch && !isAfterSession(timeMatch[1], sessionMs)) continue;
+        const { baseLine, meta } = parseLogLineMetadata(line);
+        if (!baseLine.startsWith(`[${today}`)) continue;
+        const timeMatch = baseLine.match(/\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+        if (!matchesHookSession(meta, session, timeMatch?.[1])) {
+          continue;
         }
-        const parsed = parseHookEventLine(line);
+        const parsed = parseHookEventLine(baseLine);
         if (!parsed) continue;
         if (HOOK_GUARD[parsed.hook]) {
           latestGuard = parsed;
@@ -393,7 +480,11 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
   }
 
   // Hook 详情 — 按防护/事件分组，只显示当前会话内的触发
-  const stats = getHookStats(ctx.transcript.sessionStart);
+  const stats = getHookStats({
+    sessionId: ctx.stdin.session_id,
+    transcriptPath: ctx.stdin.transcript_path,
+    sessionMs: ctx.transcript.sessionStart?.getTime() ?? 0,
+  });
   const hookCountMap = new Map(stats.hooks.map(h => [h.name, h.count]));
 
   const guardParts: string[] = [];
@@ -523,4 +614,3 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
 
   return line || null;
 }
-

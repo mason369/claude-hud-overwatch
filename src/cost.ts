@@ -14,6 +14,11 @@ export interface SessionCostEstimate {
   outputUsd: number;
 }
 
+export interface SessionCostDisplay {
+  totalUsd: number;
+  source: 'native' | 'estimate';
+}
+
 const TOKENS_PER_MILLION = 1_000_000;
 const CACHE_WRITE_MULTIPLIER = 1.25;
 const CACHE_READ_MULTIPLIER = 0.1;
@@ -106,6 +111,42 @@ export function estimateSessionCost(
     cacheCreationUsd,
     cacheReadUsd,
     outputUsd,
+  };
+}
+
+function getNativeCostUsd(stdin: StdinData): number | null {
+  const nativeCost = stdin.cost?.total_cost_usd;
+  if (typeof nativeCost !== 'number' || !Number.isFinite(nativeCost)) {
+    return null;
+  }
+
+  if (getProviderLabel(stdin)) {
+    return null;
+  }
+
+  return nativeCost;
+}
+
+export function resolveSessionCost(
+  stdin: StdinData,
+  sessionTokens: SessionTokenUsage | undefined,
+): SessionCostDisplay | null {
+  const nativeCostUsd = getNativeCostUsd(stdin);
+  if (nativeCostUsd !== null) {
+    return {
+      totalUsd: nativeCostUsd,
+      source: 'native',
+    };
+  }
+
+  const estimate = estimateSessionCost(stdin, sessionTokens);
+  if (!estimate) {
+    return null;
+  }
+
+  return {
+    totalUsd: estimate.totalUsd,
+    source: 'estimate',
   };
 }
 
