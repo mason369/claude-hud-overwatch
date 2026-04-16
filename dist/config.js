@@ -8,6 +8,17 @@ export const DEFAULT_ELEMENT_ORDER = [
     'usage',
     'memory',
     'environment',
+    'harness',
+    'tools',
+    'agents',
+    'todos',
+];
+const LEGACY_ELEMENT_ORDER = [
+    'project',
+    'context',
+    'usage',
+    'memory',
+    'environment',
     'tools',
     'agents',
     'todos',
@@ -54,6 +65,17 @@ export const DEFAULT_CONFIG = {
         modelFormat: 'full',
         modelOverride: '',
         customLine: '',
+    },
+    harness: {
+        enabled: true,
+        showScore: true,
+        showGuards: true,
+        showSensors: true,
+        showStats: true,
+        scoreThresholds: {
+            warning: 70,
+            critical: 50,
+        },
     },
     colors: {
         context: 'green',
@@ -130,6 +152,27 @@ function validateElementOrder(value) {
     }
     return elementOrder.length > 0 ? elementOrder : [...DEFAULT_ELEMENT_ORDER];
 }
+function shouldUpgradeLegacyElementOrder(value, hasHarnessConfig) {
+    if (hasHarnessConfig || !Array.isArray(value)) {
+        return false;
+    }
+    if (value.length !== LEGACY_ELEMENT_ORDER.length) {
+        return false;
+    }
+    for (const [index, item] of value.entries()) {
+        if (typeof item !== 'string' || item !== LEGACY_ELEMENT_ORDER[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+function upgradeLegacyElementOrder(value) {
+    const upgraded = [...value];
+    const environmentIndex = upgraded.indexOf('environment');
+    const insertAt = environmentIndex >= 0 ? environmentIndex + 1 : upgraded.length;
+    upgraded.splice(insertAt, 0, 'harness');
+    return upgraded;
+}
 function migrateConfig(userConfig) {
     const migrated = { ...userConfig };
     if ('layout' in userConfig && !('lineLayout' in userConfig)) {
@@ -155,6 +198,9 @@ function migrateConfig(userConfig) {
                 migrated.pathLevels = obj.pathLevels;
         }
         delete migrated.layout;
+    }
+    if (shouldUpgradeLegacyElementOrder(userConfig.elementOrder, 'harness' in userConfig)) {
+        migrated.elementOrder = upgradeLegacyElementOrder(userConfig.elementOrder);
     }
     return migrated;
 }
@@ -274,6 +320,27 @@ export function mergeConfig(userConfig) {
             ? migrated.display.customLine.slice(0, 80)
             : DEFAULT_CONFIG.display.customLine,
     };
+    const harness = {
+        enabled: typeof migrated.harness?.enabled === 'boolean'
+            ? migrated.harness.enabled
+            : DEFAULT_CONFIG.harness.enabled,
+        showScore: typeof migrated.harness?.showScore === 'boolean'
+            ? migrated.harness.showScore
+            : DEFAULT_CONFIG.harness.showScore,
+        showGuards: typeof migrated.harness?.showGuards === 'boolean'
+            ? migrated.harness.showGuards
+            : DEFAULT_CONFIG.harness.showGuards,
+        showSensors: typeof migrated.harness?.showSensors === 'boolean'
+            ? migrated.harness.showSensors
+            : DEFAULT_CONFIG.harness.showSensors,
+        showStats: typeof migrated.harness?.showStats === 'boolean'
+            ? migrated.harness.showStats
+            : DEFAULT_CONFIG.harness.showStats,
+        scoreThresholds: {
+            warning: validateThreshold(migrated.harness?.scoreThresholds?.warning, 100) || DEFAULT_CONFIG.harness.scoreThresholds.warning,
+            critical: validateThreshold(migrated.harness?.scoreThresholds?.critical, 100) || DEFAULT_CONFIG.harness.scoreThresholds.critical,
+        },
+    };
     const colors = {
         context: validateColorValue(migrated.colors?.context)
             ? migrated.colors.context
@@ -309,7 +376,7 @@ export function mergeConfig(userConfig) {
             ? migrated.colors.custom
             : DEFAULT_CONFIG.colors.custom,
     };
-    return { language, lineLayout, showSeparators, pathLevels, elementOrder, gitStatus, display, colors };
+    return { language, lineLayout, showSeparators, pathLevels, elementOrder, gitStatus, harness, display, colors };
 }
 export async function loadConfig() {
     const configPath = getConfigPath();

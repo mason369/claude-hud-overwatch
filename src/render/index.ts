@@ -11,6 +11,7 @@ import {
   renderSessionInfoLine,
   renderGitFilesLine,
   renderEnvironmentLine,
+  renderHarnessLines,
   renderUsageLine,
   renderMemoryLine,
   renderSessionTokensLine,
@@ -354,6 +355,10 @@ function renderElementLine(ctx: RenderContext, element: HudElement): string | nu
       return renderMemoryLine(ctx);
     case 'environment':
       return renderEnvironmentLine(ctx);
+    case 'harness': {
+      const harnessLines = renderHarnessLines(ctx);
+      return harnessLines.length > 0 ? harnessLines.join('\n') : null;
+    }
     case 'tools':
       return display?.showTools === false ? null : renderToolsLine(ctx);
     case 'agents':

@@ -99,6 +99,38 @@ export interface TranscriptData {
   sessionTokens?: SessionTokenUsage;
 }
 
+export type ComponentStatus = 'active' | 'installed' | 'missing';
+export type HealthTrend = 'up' | 'down' | 'stable';
+
+export interface HarnessComponentState {
+  id: string;
+  name: string;
+  type: 'guard' | 'sensor';
+  status: ComponentStatus;
+  eventCount: number;
+  blockCount: number;
+  weight: number;
+}
+
+export interface HarnessRecentEvent {
+  ts: string;
+  event: string;
+  source: string;
+  category?: string;
+  detail?: string;
+  severity?: string;
+}
+
+export interface HarnessHealth {
+  score: number;
+  trend: HealthTrend;
+  components: HarnessComponentState[];
+  totalEvents: number;
+  totalViolations: number;
+  sessionEvents: number;
+  recentEvents: HarnessRecentEvent[];
+}
+
 export interface RenderContext {
   stdin: StdinData;
   transcript: TranscriptData;
@@ -110,6 +142,7 @@ export interface RenderContext {
   gitStatus: GitStatus | null;
   usageData: UsageData | null;
   memoryUsage: MemoryInfo | null;
+  harness?: HarnessHealth;
   config: HudConfig;
   extraLabel: string | null;
   outputStyle?: string;

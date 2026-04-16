@@ -17,7 +17,7 @@ export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
  *   short:   Strip context suffix AND "Claude " prefix (e.g. "Opus 4.6")
  */
 export type ModelFormatMode = 'full' | 'compact' | 'short';
-export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'tools' | 'agents' | 'todos';
+export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'harness' | 'tools' | 'agents' | 'todos';
 export type HudColorName =
   | 'dim'
   | 'red'
@@ -46,6 +46,18 @@ export interface HudColorOverrides {
 }
 
 export const DEFAULT_ELEMENT_ORDER: HudElement[] = [
+  'project',
+  'context',
+  'usage',
+  'memory',
+  'environment',
+  'harness',
+  'tools',
+  'agents',
+  'todos',
+];
+
+const LEGACY_ELEMENT_ORDER: Exclude<HudElement, 'harness'>[] = [
   'project',
   'context',
   'usage',
@@ -100,6 +112,17 @@ export interface HudConfig {
     modelOverride: string;
     customLine: string;
   };
+  harness: {
+    enabled: boolean;
+    showScore: boolean;
+    showGuards: boolean;
+    showSensors: boolean;
+    showStats: boolean;
+    scoreThresholds: {
+      warning: number;
+      critical: number;
+    };
+  };
   colors: HudColorOverrides;
 }
 
@@ -144,6 +167,17 @@ export const DEFAULT_CONFIG: HudConfig = {
     modelFormat: 'full',
     modelOverride: '',
     customLine: '',
+  },
+  harness: {
+    enabled: true,
+    showScore: true,
+    showGuards: true,
+    showSensors: true,
+    showStats: true,
+    scoreThresholds: {
+      warning: 70,
+      critical: 50,
+    },
   },
   colors: {
     context: 'green',
@@ -238,6 +272,35 @@ interface LegacyConfig {
   layout?: 'default' | 'separators' | Record<string, unknown>;
 }
 
+function shouldUpgradeLegacyElementOrder(
+  value: unknown,
+  hasHarnessConfig: boolean,
+): value is Exclude<HudElement, 'harness'>[] {
+  if (hasHarnessConfig || !Array.isArray(value)) {
+    return false;
+  }
+
+  if (value.length !== LEGACY_ELEMENT_ORDER.length) {
+    return false;
+  }
+
+  for (const [index, item] of value.entries()) {
+    if (typeof item !== 'string' || item !== LEGACY_ELEMENT_ORDER[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function upgradeLegacyElementOrder(value: Exclude<HudElement, 'harness'>[]): HudElement[] {
+  const upgraded: HudElement[] = [...value];
+  const environmentIndex = upgraded.indexOf('environment');
+  const insertAt = environmentIndex >= 0 ? environmentIndex + 1 : upgraded.length;
+  upgraded.splice(insertAt, 0, 'harness');
+  return upgraded;
+}
+
 function migrateConfig(userConfig: Partial<HudConfig> & LegacyConfig): Partial<HudConfig> {
   const migrated = { ...userConfig } as Partial<HudConfig> & LegacyConfig;
 
@@ -259,6 +322,10 @@ function migrateConfig(userConfig: Partial<HudConfig> & LegacyConfig): Partial<H
       if (typeof obj.pathLevels === 'number') migrated.pathLevels = obj.pathLevels as any;
     }
     delete migrated.layout;
+  }
+
+  if (shouldUpgradeLegacyElementOrder(userConfig.elementOrder, 'harness' in userConfig)) {
+    migrated.elementOrder = upgradeLegacyElementOrder(userConfig.elementOrder);
   }
 
   return migrated;
@@ -388,6 +455,28 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
       : DEFAULT_CONFIG.display.customLine,
   };
 
+  const harness = {
+    enabled: typeof migrated.harness?.enabled === 'boolean'
+      ? migrated.harness.enabled
+      : DEFAULT_CONFIG.harness.enabled,
+    showScore: typeof migrated.harness?.showScore === 'boolean'
+      ? migrated.harness.showScore
+      : DEFAULT_CONFIG.harness.showScore,
+    showGuards: typeof migrated.harness?.showGuards === 'boolean'
+      ? migrated.harness.showGuards
+      : DEFAULT_CONFIG.harness.showGuards,
+    showSensors: typeof migrated.harness?.showSensors === 'boolean'
+      ? migrated.harness.showSensors
+      : DEFAULT_CONFIG.harness.showSensors,
+    showStats: typeof migrated.harness?.showStats === 'boolean'
+      ? migrated.harness.showStats
+      : DEFAULT_CONFIG.harness.showStats,
+    scoreThresholds: {
+      warning: validateThreshold(migrated.harness?.scoreThresholds?.warning, 100) || DEFAULT_CONFIG.harness.scoreThresholds.warning,
+      critical: validateThreshold(migrated.harness?.scoreThresholds?.critical, 100) || DEFAULT_CONFIG.harness.scoreThresholds.critical,
+    },
+  };
+
   const colors = {
     context: validateColorValue(migrated.colors?.context)
       ? migrated.colors.context
@@ -424,7 +513,7 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
       : DEFAULT_CONFIG.colors.custom,
   };
 
-  return { language, lineLayout, showSeparators, pathLevels, elementOrder, gitStatus, display, colors };
+  return { language, lineLayout, showSeparators, pathLevels, elementOrder, gitStatus, harness, display, colors };
 }
 
 export async function loadConfig(): Promise<HudConfig> {

@@ -21,7 +21,18 @@ function restoreEnvVar(name, value) {
 }
 
 test('loadConfig returns valid config structure', async () => {
-  const config = await loadConfig();
+  // Use a temporary config dir to avoid interference from the user's real config
+  const tempConfigDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-config-struct-'));
+  const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = tempConfigDir;
+
+  let config;
+  try {
+    config = await loadConfig();
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
+    await rm(tempConfigDir, { recursive: true, force: true });
+  }
 
   // pathLevels must be 1, 2, or 3
   assert.ok([1, 2, 3].includes(config.pathLevels), 'pathLevels should be 1, 2, or 3');
@@ -160,6 +171,30 @@ test('loadConfig reads user config from CLAUDE_CONFIG_DIR', async () => {
   }
 });
 
+test('loadConfig upgrades legacy runtime elementOrder to include harness', async () => {
+  const originalConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  const customConfigDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-config-upgrade-'));
+
+  try {
+    process.env.CLAUDE_CONFIG_DIR = customConfigDir;
+    const pluginDir = path.join(customConfigDir, 'plugins', 'claude-hud');
+    await mkdir(pluginDir, { recursive: true });
+    await writeFile(
+      path.join(pluginDir, 'config.json'),
+      JSON.stringify({
+        elementOrder: ['project', 'context', 'usage', 'memory', 'environment', 'tools', 'agents', 'todos'],
+      }),
+      'utf8'
+    );
+
+    const config = await loadConfig();
+    assert.deepEqual(config.elementOrder, DEFAULT_ELEMENT_ORDER);
+  } finally {
+    restoreEnvVar('CLAUDE_CONFIG_DIR', originalConfigDir);
+    await rm(customConfigDir, { recursive: true, force: true });
+  }
+});
+
 // --- migrateConfig tests (via mergeConfig) ---
 
 test('migrate legacy layout: "default" -> compact, no separators', () => {
@@ -260,10 +295,62 @@ test('mergeConfig treats elementOrder as an explicit expanded-mode filter', () =
   assert.deepEqual(config.elementOrder, ['usage', 'project']);
 });
 
+test('mergeConfig preserves explicit harness omission when harness config exists', () => {
+  const config = mergeConfig({
+    elementOrder: ['project', 'context', 'usage', 'memory', 'environment', 'tools', 'agents', 'todos'],
+    harness: {
+      enabled: true,
+      showStats: false,
+    },
+  });
+  assert.ok(!config.elementOrder.includes('harness'));
+});
+
 test('mergeConfig falls back to default when elementOrder is empty or invalid', () => {
   assert.deepEqual(mergeConfig({ elementOrder: [] }).elementOrder, DEFAULT_ELEMENT_ORDER);
   assert.deepEqual(mergeConfig({ elementOrder: ['unknown'] }).elementOrder, DEFAULT_ELEMENT_ORDER);
   assert.deepEqual(mergeConfig({ elementOrder: 'project' }).elementOrder, DEFAULT_ELEMENT_ORDER);
+});
+
+// --- Harness config tests ---
+
+test('mergeConfig defaults harness config', () => {
+  const config = mergeConfig({});
+  assert.equal(config.harness.enabled, true);
+  assert.equal(config.harness.showScore, true);
+  assert.equal(config.harness.showGuards, true);
+  assert.equal(config.harness.showSensors, true);
+  assert.equal(config.harness.showStats, true);
+  assert.equal(config.harness.scoreThresholds.warning, 70);
+  assert.equal(config.harness.scoreThresholds.critical, 50);
+});
+
+test('mergeConfig preserves explicit harness.enabled=false', () => {
+  const config = mergeConfig({ harness: { enabled: false } });
+  assert.equal(config.harness.enabled, false);
+  // Other fields should still get defaults
+  assert.equal(config.harness.showScore, true);
+  assert.equal(config.harness.showGuards, true);
+});
+
+test('mergeConfig preserves custom harness scoreThresholds', () => {
+  const config = mergeConfig({ harness: { scoreThresholds: { warning: 80, critical: 40 } } });
+  assert.equal(config.harness.scoreThresholds.warning, 80);
+  assert.equal(config.harness.scoreThresholds.critical, 40);
+});
+
+test('mergeConfig preserves harness showGuards=false', () => {
+  const config = mergeConfig({ harness: { showGuards: false, showSensors: false } });
+  assert.equal(config.harness.showGuards, false);
+  assert.equal(config.harness.showSensors, false);
+  assert.equal(config.harness.enabled, true);
+});
+
+test('DEFAULT_ELEMENT_ORDER includes harness', () => {
+  assert.ok(DEFAULT_ELEMENT_ORDER.includes('harness'), 'DEFAULT_ELEMENT_ORDER should include harness');
+  const envIndex = DEFAULT_ELEMENT_ORDER.indexOf('environment');
+  const harnessIndex = DEFAULT_ELEMENT_ORDER.indexOf('harness');
+  assert.ok(harnessIndex > envIndex, 'harness should come after environment');
 });
 
 test('mergeConfig defaults colors to expected semantic palette', () => {

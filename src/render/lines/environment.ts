@@ -458,6 +458,8 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
   const threshold = display?.environmentThreshold ?? 0;
   const showCounts = display?.showConfigCounts !== false;
   const showOutputStyle = display?.showOutputStyle === true;
+  const harnessActive = ctx.config.elementOrder.includes('harness')
+    && ctx.config.harness?.enabled !== false;
   const parts: string[] = [];
 
   if (showCounts && totalCounts >= threshold && totalCounts > 0) {
@@ -477,6 +479,12 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
 
   if (showOutputStyle && ctx.outputStyle) {
     parts.push(`style: ${ctx.outputStyle}`);
+  }
+
+  // Hook 详情 — 当 harness 仪表盘激活时，由 harness 模块负责渲染防护/事件/违规
+  if (harnessActive) {
+    if (parts.length === 0) return null;
+    return label(parts.join(" | "), ctx.config?.colors);
   }
 
   // Hook 详情 — 按防护/事件分组，只显示当前会话内的触发

@@ -3,7 +3,7 @@ import { renderSessionLine } from './session-line.js';
 import { renderToolsLine } from './tools-line.js';
 import { renderAgentsLine } from './agents-line.js';
 import { renderTodosLine } from './todos-line.js';
-import { renderIdentityLine, renderProjectLine, renderSessionInfoLine, renderGitFilesLine, renderEnvironmentLine, renderUsageLine, renderMemoryLine, renderSessionTokensLine, } from './lines/index.js';
+import { renderIdentityLine, renderProjectLine, renderSessionInfoLine, renderGitFilesLine, renderEnvironmentLine, renderHarnessLines, renderUsageLine, renderMemoryLine, renderSessionTokensLine, } from './lines/index.js';
 import { dim, RESET } from './colors.js';
 import { UNKNOWN_TERMINAL_WIDTH } from '../utils/terminal.js';
 // eslint-disable-next-line no-control-regex
@@ -290,6 +290,10 @@ function renderElementLine(ctx, element) {
             return renderMemoryLine(ctx);
         case 'environment':
             return renderEnvironmentLine(ctx);
+        case 'harness': {
+            const harnessLines = renderHarnessLines(ctx);
+            return harnessLines.length > 0 ? harnessLines.join('\n') : null;
+        }
         case 'tools':
             return display?.showTools === false ? null : renderToolsLine(ctx);
         case 'agents':
