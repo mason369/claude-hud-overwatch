@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chmod, copyFile, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -77,6 +78,22 @@ async function waitForFileContains(filePath, expectedText, timeoutMs = 2000) {
 
 function getHooksDirForHome(homeDir) {
   return path.join(homeDir, '.claude', 'hooks');
+}
+
+function sessionScopeKey(sessionId = '', transcriptPath = '') {
+  return createHash('sha256')
+    .update(`${sessionId}|${transcriptPath}`)
+    .digest('hex');
+}
+
+function getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath) {
+  return path.join(
+    homeDir,
+    '.claude',
+    'logs',
+    'completion-gate',
+    `pending-edits-${sessionScopeKey(sessionId, transcriptPath)}.flag`,
+  );
 }
 
 async function writeExecutable(filePath, content) {
@@ -207,6 +224,8 @@ test('completion-gate detects .NET solution roots that only contain a .sln file'
   const projectDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-completion-project-'));
   const binDir = path.join(homeDir, 'bin');
   const markerPath = path.join(homeDir, 'dotnet-args.txt');
+  const sessionId = 'session-dotnet-sln';
+  const transcriptPath = 'C:/tmp/session-dotnet-sln.jsonl';
   const originalHome = process.env.HOME;
   const originalUserProfile = process.env.USERPROFILE;
   process.env.HOME = homeDir;
@@ -222,11 +241,13 @@ test('completion-gate detects .NET solution roots that only contain a .sln file'
       '',
     ].join('\n'));
     await writeFile(path.join(projectDir, 'Demo.sln'), '', 'utf8');
+    await mkdir(path.dirname(getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath)), { recursive: true });
+    await writeFile(getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath), 'dirty', 'utf8');
 
     const result = runHook('completion-gate.sh', {
       input: JSON.stringify({
-        session_id: 'session-dotnet-sln',
-        transcript_path: 'C:/tmp/session-dotnet-sln.jsonl',
+        session_id: sessionId,
+        transcript_path: transcriptPath,
         cwd: projectDir,
       }),
       env: {
@@ -264,6 +285,8 @@ test('completion-gate detects a working npm test script from a Windows cwd', asy
 
   const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-completion-home-'));
   const projectDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-completion-project-'));
+  const sessionId = 'session-completion';
+  const transcriptPath = 'C:/tmp/session-completion.jsonl';
   const originalHome = process.env.HOME;
   const originalUserProfile = process.env.USERPROFILE;
   process.env.HOME = homeDir;
@@ -287,11 +310,13 @@ test('completion-gate detects a working npm test script from a Windows cwd', asy
       '});',
       '',
     ].join('\n'), 'utf8');
+    await mkdir(path.dirname(getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath)), { recursive: true });
+    await writeFile(getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath), 'dirty', 'utf8');
 
     const result = runHook('completion-gate.sh', {
       input: JSON.stringify({
-        session_id: 'session-completion',
-        transcript_path: 'C:/tmp/session-completion.jsonl',
+        session_id: sessionId,
+        transcript_path: transcriptPath,
         cwd: projectDir,
       }),
       env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
@@ -417,7 +442,7 @@ test('research-first guard keeps read tracking session-scoped', async (t) => {
   }
 });
 
-test('research-first guard allows Write on an existing file without requiring a prior Read', async (t) => {
+test('research-first guard blocks Write on an existing file without requiring a prior Read', async (t) => {
   const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-research-home-'));
   const workspaceDir = path.join(homeDir, 'workspace');
   const originalHome = process.env.HOME;
@@ -443,7 +468,56 @@ test('research-first guard allows Write on an existing file without requiring a 
 
     if (skipIfSpawnUnavailable(writeResult, t)) return;
 
-    assert.equal(writeResult.status, 0, `Write on an existing scratch file should not be blocked\n${writeResult.stdout}\n${writeResult.stderr}`);
+    assert.equal(writeResult.status, 2, `Write on an existing scratch file should require a prior Read\n${writeResult.stdout}\n${writeResult.stderr}`);
+    assert.match(writeResult.stdout, /read the file now/i);
+  } finally {
+    restoreEnvVar('HOME', originalHome);
+    restoreEnvVar('USERPROFILE', originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('research-first guard allows Write on an existing file after a prior Read in the same session', async (t) => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-research-home-'));
+  const workspaceDir = path.join(homeDir, 'workspace');
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+    await mkdir(workspaceDir, { recursive: true });
+    const targetFile = path.join(workspaceDir, 'scratch.py');
+    const sessionId = 'session-writer';
+    const transcriptPath = 'C:/tmp/session-writer.jsonl';
+    await writeFile(targetFile, 'print("hello")\n', 'utf8');
+
+    const readResult = runHook('read-tracker.sh', {
+      input: JSON.stringify({
+        tool_name: 'Read',
+        tool_input: { file_path: targetFile },
+        session_id: sessionId,
+        transcript_path: transcriptPath,
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    if (skipIfSpawnUnavailable(readResult, t)) return;
+
+    assert.equal(readResult.status, 0, readResult.stderr || 'read-tracker should succeed');
+
+    const writeResult = runHook('research-first-guard.sh', {
+      input: JSON.stringify({
+        tool_name: 'Write',
+        tool_input: { file_path: targetFile },
+        session_id: sessionId,
+        transcript_path: transcriptPath,
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    assert.equal(writeResult.status, 0, `Write should be allowed after a prior Read in the same session\n${writeResult.stdout}\n${writeResult.stderr}`);
     assert.equal(writeResult.stdout, '');
     assert.equal(writeResult.stderr, '');
   } finally {
@@ -494,6 +568,8 @@ test('subagent logger writes session metadata for lifecycle events', async (t) =
 test('completion-gate runs npm test without injecting extra argv', async (t) => {
   const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-completion-home-'));
   const workspaceDir = path.join(homeDir, 'workspace');
+  const sessionId = 'session-completion-argv';
+  const transcriptPath = 'C:/tmp/session-completion-argv.jsonl';
   const originalHome = process.env.HOME;
   const originalUserProfile = process.env.USERPROFILE;
   process.env.HOME = homeDir;
@@ -509,9 +585,15 @@ test('completion-gate runs npm test without injecting extra argv', async (t) => 
         test: 'node -e "if (process.argv.length > 1) { console.error(process.argv.slice(1).join(\' \')); process.exit(7); }"',
       },
     }, null, 2), 'utf8');
+    await mkdir(path.dirname(getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath)), { recursive: true });
+    await writeFile(getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath), 'dirty', 'utf8');
 
     const result = runHook('completion-gate.sh', {
-      input: JSON.stringify({ cwd: workspaceDir }),
+      input: JSON.stringify({
+        session_id: sessionId,
+        transcript_path: transcriptPath,
+        cwd: workspaceDir,
+      }),
       env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
     });
 
@@ -535,6 +617,8 @@ test('completion-gate runs npm test without injecting extra argv', async (t) => 
 test('completion-gate returns a structured Stop block when tests fail', async (t) => {
   const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-completion-fail-home-'));
   const workspaceDir = path.join(homeDir, 'workspace');
+  const sessionId = 'session-completion-fail';
+  const transcriptPath = 'C:/tmp/session-completion-fail.jsonl';
   const originalHome = process.env.HOME;
   const originalUserProfile = process.env.USERPROFILE;
   process.env.HOME = homeDir;
@@ -550,9 +634,13 @@ test('completion-gate returns a structured Stop block when tests fail', async (t
         test: 'node -e "console.error(\'boom\'); process.exit(5)"',
       },
     }, null, 2), 'utf8');
+    await mkdir(path.dirname(getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath)), { recursive: true });
+    await writeFile(getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath), 'dirty', 'utf8');
 
     const result = runHook('completion-gate.sh', {
       input: JSON.stringify({
+        session_id: sessionId,
+        transcript_path: transcriptPath,
         cwd: workspaceDir,
         last_assistant_message: 'All done.',
       }),
@@ -562,7 +650,7 @@ test('completion-gate returns a structured Stop block when tests fail', async (t
     if (skipIfSpawnUnavailable(result, t)) return;
 
     assert.equal(result.status, 0, `completion-gate should return structured block JSON instead of a hook error\n${result.stdout}\n${result.stderr}`);
-    assert.equal(result.stderr, '');
+    assert.match(result.stderr, /Running completion-gate: npm test/i);
 
     const parsed = JSON.parse(result.stdout);
     assert.equal(parsed.decision, 'block');
@@ -573,6 +661,130 @@ test('completion-gate returns a structured Stop block when tests fail', async (t
       '"source":"completion-gate"',
     );
     assert.ok(harnessContent.includes('"category":"tests_failed"'), harnessContent);
+  } finally {
+    restoreEnvVar('HOME', originalHome);
+    restoreEnvVar('USERPROFILE', originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('completion-gate only runs after an Edit or Write in the current session and clears the pending marker after running', async (t) => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-completion-dirty-home-'));
+  const workspaceDir = path.join(homeDir, 'workspace');
+  const runMarkerPath = path.join(homeDir, 'completion-gate-runs.log');
+  const editedFilePath = path.join(workspaceDir, 'notes.md');
+  const sessionId = 'session-completion-dirty';
+  const transcriptPath = 'C:/tmp/session-completion-dirty.jsonl';
+  const otherSessionId = 'session-completion-other';
+  const otherTranscriptPath = 'C:/tmp/session-completion-other.jsonl';
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+    await mkdir(workspaceDir, { recursive: true });
+    await writeFile(path.join(workspaceDir, 'package.json'), JSON.stringify({
+      name: 'completion-gate-dirty',
+      version: '1.0.0',
+      scripts: {
+        test: 'node -e "require(\'node:fs\').appendFileSync(process.env.TEST_RUN_MARKER, \'run\\\\n\')"',
+      },
+    }, null, 2), 'utf8');
+    await writeFile(editedFilePath, '# Notes\n', 'utf8');
+
+    const stopInput = (activeSessionId, activeTranscriptPath) => JSON.stringify({
+      session_id: activeSessionId,
+      transcript_path: activeTranscriptPath,
+      cwd: workspaceDir,
+      last_assistant_message: 'All done.',
+    });
+
+    const initialStop = runHook('completion-gate.sh', {
+      input: stopInput(sessionId, transcriptPath),
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        USERPROFILE: homeDir,
+        TEST_RUN_MARKER: runMarkerPath,
+      },
+    });
+
+    if (skipIfSpawnUnavailable(initialStop, t)) return;
+
+    assert.equal(initialStop.status, 0, initialStop.stderr || initialStop.stdout || 'completion-gate should skip when no edits happened in this session');
+    assert.equal(initialStop.stdout, '');
+    assert.equal(initialStop.stderr, '');
+    assert.equal(existsSync(runMarkerPath), false, 'tests should not run before any edit/write marker exists');
+
+    const markDirty = runHook('auto-format.sh', {
+      input: JSON.stringify({
+        session_id: sessionId,
+        transcript_path: transcriptPath,
+        tool_input: { file_path: editedFilePath },
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    assert.equal(markDirty.status, 0, markDirty.stderr || markDirty.stdout || 'auto-format should succeed while marking the session dirty');
+
+    const otherSessionStop = runHook('completion-gate.sh', {
+      input: stopInput(otherSessionId, otherTranscriptPath),
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        USERPROFILE: homeDir,
+        TEST_RUN_MARKER: runMarkerPath,
+      },
+    });
+
+    assert.equal(otherSessionStop.status, 0, otherSessionStop.stderr || otherSessionStop.stdout || 'completion-gate should not reuse a different session marker');
+    assert.equal(existsSync(runMarkerPath), false, 'tests should remain skipped for a different session');
+
+    const sessionFlagPath = getCompletionGatePendingEditsFlagPath(homeDir, sessionId, transcriptPath);
+    assert.equal(existsSync(sessionFlagPath), true, 'auto-format should mark the current session as having pending edits');
+
+    const runStop = runHook('completion-gate.sh', {
+      input: stopInput(sessionId, transcriptPath),
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        USERPROFILE: homeDir,
+        TEST_RUN_MARKER: runMarkerPath,
+      },
+    });
+
+    assert.equal(runStop.status, 0, runStop.stderr || runStop.stdout || 'completion-gate should run tests after an edit/write in the same session');
+    assert.equal(runStop.stdout, '');
+    assert.match(runStop.stderr, /Running completion-gate: npm test/i);
+    assert.match(runStop.stderr, /workspace/i);
+
+    const runContent = await waitForFileContains(runMarkerPath, 'run');
+    assert.equal(runContent.trim().split(/\r?\n/).length, 1, runContent);
+    assert.equal(existsSync(sessionFlagPath), false, 'completion-gate should clear the pending edit marker after running tests');
+
+    const harnessContent = await waitForFileContains(
+      path.join(homeDir, '.claude', 'logs', 'harness-events.jsonl'),
+      '"source":"completion-gate"',
+    );
+    assert.ok(harnessContent.includes('"category":"tests_running"'), harnessContent);
+    assert.ok(harnessContent.includes('"category":"tests_passed"'), harnessContent);
+
+    const secondStop = runHook('completion-gate.sh', {
+      input: stopInput(sessionId, transcriptPath),
+      env: {
+        ...process.env,
+        HOME: homeDir,
+        USERPROFILE: homeDir,
+        TEST_RUN_MARKER: runMarkerPath,
+      },
+    });
+
+    assert.equal(secondStop.status, 0, secondStop.stderr || secondStop.stdout || 'completion-gate should skip after the pending marker has been cleared');
+    assert.equal(secondStop.stdout, '');
+    assert.equal(secondStop.stderr, '');
+    assert.equal(await readFile(runMarkerPath, 'utf8'), runContent);
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('USERPROFILE', originalUserProfile);
@@ -662,7 +874,7 @@ test('auto-format reports skipped instead of claiming success when no dotnet wor
   }
 });
 
-test('safety-gate returns a structured PreToolUse deny for destructive root deletion', async (t) => {
+test('safety-gate allows destructive root deletion commands because safety enforcement is disabled', async (t) => {
   const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-safety-home-'));
   const originalHome = process.env.HOME;
   const originalUserProfile = process.env.USERPROFILE;
@@ -682,19 +894,16 @@ test('safety-gate returns a structured PreToolUse deny for destructive root dele
 
     if (skipIfSpawnUnavailable(result, t)) return;
 
-    assert.equal(result.status, 0, `safety-gate should deny through structured JSON instead of failing the hook\n${result.stdout}\n${result.stderr}`);
+    assert.equal(result.status, 0, `safety-gate should no longer block Bash commands\n${result.stdout}\n${result.stderr}`);
+    assert.equal(result.stdout, '');
     assert.equal(result.stderr, '');
-
-    const parsed = JSON.parse(result.stdout);
-    assert.equal(parsed.hookSpecificOutput?.hookEventName, 'PreToolUse');
-    assert.equal(parsed.hookSpecificOutput?.permissionDecision, 'deny');
-    assert.match(parsed.hookSpecificOutput?.permissionDecisionReason ?? '', /rm -rf|destructive|danger/i);
 
     const harnessContent = await waitForFileContains(
       path.join(homeDir, '.claude', 'logs', 'harness-events.jsonl'),
       '"source":"safety-gate"',
     );
-    assert.ok(harnessContent.includes('"category":"recursive_delete"'), harnessContent);
+    assert.ok(harnessContent.includes('"category":"safe_command"'), harnessContent);
+    assert.ok(!harnessContent.includes('"category":"recursive_delete"'), harnessContent);
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('USERPROFILE', originalUserProfile);
@@ -741,6 +950,78 @@ test('safety-gate allows local sqlite FTS rebuild commands instead of blocking a
   }
 });
 
+test('linter protection allows edits to lint and formatter config files', async (t) => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-linter-home-'));
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+
+    const result = runHook('linter-config-protection.sh', {
+      input: JSON.stringify({
+        tool_name: 'Edit',
+        tool_input: { file_path: 'C:/workspace/tsconfig.json' },
+        session_id: 'session-linter-allow',
+        transcript_path: 'C:/tmp/session-linter-allow.jsonl',
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    if (skipIfSpawnUnavailable(result, t)) return;
+
+    assert.equal(result.status, 0, `linter protection should no longer block config edits\n${result.stdout}\n${result.stderr}`);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, '');
+  } finally {
+    restoreEnvVar('HOME', originalHome);
+    restoreEnvVar('USERPROFILE', originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('settings allow unrestricted Bash and no longer deny env or secrets access', async () => {
+  const settingsPath = path.join(REAL_HOME, '.claude', 'settings.json');
+  const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
+  const allow = settings.permissions?.allow ?? [];
+  const deny = settings.permissions?.deny ?? [];
+
+  assert.ok(allow.includes('Bash'));
+  assert.ok(!allow.some(entry => /^Bash\(.+\)$/.test(entry)), JSON.stringify(allow));
+  assert.ok(!deny.some(entry => /(^|\/)\.env(\.\*|\)|$)|secrets\/\*\*|cat \.env|cat \.\/secrets/i.test(entry)), JSON.stringify(deny));
+});
+
+test('settings do not route Bash through safety-gate or Edit|Write through linter protection', async () => {
+  const settingsPath = path.join(REAL_HOME, '.claude', 'settings.json');
+  const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
+  const preToolUse = settings.hooks?.PreToolUse ?? [];
+  const safetyGroups = preToolUse.filter(group =>
+    Array.isArray(group?.hooks)
+    && group.hooks.some(hook => String(hook?.command ?? '').includes('safety-gate.sh')),
+  );
+  const linterGroups = preToolUse.filter(group =>
+    Array.isArray(group?.hooks)
+    && group.hooks.some(hook => String(hook?.command ?? '').includes('linter-config-protection.sh')),
+  );
+
+  assert.equal(safetyGroups.length, 0, JSON.stringify(preToolUse));
+  assert.equal(linterGroups.length, 0, JSON.stringify(preToolUse));
+});
+
+test('settings do not route Read through the cbm discovery gate', async () => {
+  const settingsPath = path.join(REAL_HOME, '.claude', 'settings.json');
+  const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
+  const cbmGroup = settings.hooks?.PreToolUse?.find(group =>
+    Array.isArray(group?.hooks)
+    && group.hooks.some(hook => String(hook?.command ?? '').includes('cbm-code-discovery-gate')),
+  );
+
+  assert.ok(cbmGroup, 'expected to find cbm discovery gate hook registration');
+  assert.equal(cbmGroup.matcher, 'Grep|Glob|Search');
+});
+
 test('cbm gate allows code search tools after transcript shows codebase-memory-mcp usage', async (t) => {
   const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-cbm-home-'));
   const workspaceDir = path.join(homeDir, 'workspace');
@@ -779,6 +1060,74 @@ test('cbm gate allows code search tools after transcript shows codebase-memory-m
     if (skipIfSpawnUnavailable(result, t)) return;
 
     assert.equal(result.status, 0, `cbm gate should allow after MCP discovery usage\n${result.stdout}\n${result.stderr}`);
+  } finally {
+    restoreEnvVar('HOME', originalHome);
+    restoreEnvVar('USERPROFILE', originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('cbm gate allows reading markdown docs before MCP discovery is used', async (t) => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-cbm-home-'));
+  const workspaceDir = path.join(homeDir, 'workspace');
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+    await mkdir(path.join(workspaceDir, 'docs'), { recursive: true });
+
+    const result = runHook('cbm-code-discovery-gate', {
+      input: JSON.stringify({
+        tool_name: 'Read',
+        tool_input: { file_path: path.join(workspaceDir, 'docs', 'design.md') },
+        session_id: 'session-cbm-doc-read',
+        transcript_path: path.join(workspaceDir, 'session.jsonl'),
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    if (skipIfSpawnUnavailable(result, t)) return;
+
+    assert.equal(result.status, 0, `cbm gate should not block markdown reads\n${result.stdout}\n${result.stderr}`);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, '');
+  } finally {
+    restoreEnvVar('HOME', originalHome);
+    restoreEnvVar('USERPROFILE', originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('cbm gate allows code reads before MCP discovery is used', async (t) => {
+  const homeDir = await mkdtemp(path.join(tmpdir(), 'claude-hud-cbm-home-'));
+  const workspaceDir = path.join(homeDir, 'workspace');
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+    await mkdir(path.join(workspaceDir, 'src'), { recursive: true });
+
+    const result = runHook('cbm-code-discovery-gate', {
+      input: JSON.stringify({
+        tool_name: 'Read',
+        tool_input: { file_path: path.join(workspaceDir, 'src', 'feature.ts') },
+        session_id: 'session-cbm-code-read',
+        transcript_path: path.join(workspaceDir, 'session.jsonl'),
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    if (skipIfSpawnUnavailable(result, t)) return;
+
+    assert.equal(result.status, 0, `cbm gate should not block code reads\n${result.stdout}\n${result.stderr}`);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, '');
   } finally {
     restoreEnvVar('HOME', originalHome);
     restoreEnvVar('USERPROFILE', originalUserProfile);

@@ -484,8 +484,11 @@ function formatRecentEventDetail(event: HarnessRecentEvent): string {
   }
 
   if (event.source === "completion-gate") {
+    if (event.category === "tests_running") {
+      return detail ? `${t("harnessReason.testsRunning")}: ${detail}` : t("harnessReason.testsRunning");
+    }
     if (detail && (/\bexit 124\b/i.test(detail) || /timed out/i.test(detail))) {
-      return `${t("harnessReason.testsTimedOut")}: ${detail} (60s)`;
+      return `${t("harnessReason.testsTimedOut")}: ${detail}`;
     }
     if (detail) {
       return `${t("harnessReason.testsFailed")}: ${detail}`;

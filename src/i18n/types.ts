@@ -48,6 +48,7 @@ export type MessageKey =
   | "harnessRecentEvent"
   | "harnessReason.cbmAwaitingMcpUsage"
   | "harnessReason.cbmHint"
+  | "harnessReason.testsRunning"
   | "harnessReason.testsFailed"
   | "harnessReason.testsTimedOut"
   | "harnessReason.phraseDetected"

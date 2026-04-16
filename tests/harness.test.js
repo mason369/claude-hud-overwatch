@@ -784,7 +784,7 @@ test('renderHarnessLines hides score bar and numeric score when showScore is fal
   const [line] = renderHarnessLines(ctx).map(entry => entry.replace(/\x1b\[[0-9;]*m/g, ''));
 
   assert.ok(line.includes('Harness'), `expected harness header to remain visible: ${JSON.stringify(line)}`);
-  assert.ok(line.includes('Today:3'), `expected today count to remain visible: ${JSON.stringify(line)}`);
+  assert.ok(line.includes('Session:3'), `expected session count to remain visible: ${JSON.stringify(line)}`);
   assert.ok(!line.includes('88'), `score should be hidden when showScore=false: ${JSON.stringify(line)}`);
   assert.ok(!line.includes('█') && !line.includes('░'), `score bar should be hidden when showScore=false: ${JSON.stringify(line)}`);
 });
@@ -812,7 +812,7 @@ test('renderHarnessLines uses Chinese labels when language is zh', () => {
   const lines = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
 
   assert.ok(lines[0].includes('防护'), `expected Chinese dashboard label: ${JSON.stringify(lines)}`);
-  assert.ok(lines[0].includes('今日:14'), `expected Chinese today label: ${JSON.stringify(lines)}`);
+  assert.ok(lines[0].includes('本会话:14'), `expected Chinese session label: ${JSON.stringify(lines)}`);
   assert.ok(lines[1].includes('守护:'), `expected Chinese guards label: ${JSON.stringify(lines)}`);
   assert.ok(lines[1].includes('研究'), `expected translated component name: ${JSON.stringify(lines)}`);
   assert.ok(lines[2].includes('传感:'), `expected Chinese sensors label: ${JSON.stringify(lines)}`);
@@ -870,4 +870,35 @@ test('renderHarnessLines shows recent detailed trigger information in Chinese', 
   assert.ok(lines.some(line => line.includes('↳ 违规[') && line.includes('停止') && line.includes('请求许可')), JSON.stringify(lines));
   assert.ok(lines.some(line => line.includes('↳ 拦截[') && line.includes('完成') && line.includes('pytest: exit 124')), JSON.stringify(lines));
   assert.ok(lines.some(line => line.includes('↳ 任务[') && line.includes('优化左侧面板 UI')), JSON.stringify(lines));
+});
+
+test('renderHarnessLines explains a running completion-gate event in Chinese', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 91,
+      trend: 'up',
+      components: [
+        { id: 'completion-gate', name: 'Completion Gate', type: 'sensor', status: 'active', eventCount: 2, blockCount: 0, weight: 3 },
+      ],
+      totalEvents: 2,
+      totalViolations: 0,
+      sessionEvents: 2,
+      recentEvents: [
+        {
+          ts: '2026-04-16T10:05:00.000Z',
+          event: 'sensor.trigger',
+          source: 'completion-gate',
+          category: 'tests_running',
+          detail: 'npm test @ D:\\Auto-STN\\EnPro',
+          severity: 'info',
+        },
+      ],
+    },
+  });
+
+  const lines = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+
+  assert.ok(lines.some(line => line.includes('↳ 事件[') && line.includes('完成') && line.includes('正在运行测试') && line.includes('npm test')), JSON.stringify(lines));
 });
