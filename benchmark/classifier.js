@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
 import path from "node:path";
 
 export async function loadEnabledSessionIds(eventsPath) {
@@ -23,14 +25,50 @@ export async function loadEnabledSessionIds(eventsPath) {
   return ids;
 }
 
-export async function extractSessionId(transcriptPath) {
-  let content;
+// Stream-read the first non-empty line from a file. For multi-MB transcripts
+// this avoids buffering the whole file into memory just to peek at the first
+// line's JSON. Returns "" when the file exists but has no non-empty lines.
+// Throws (ENOENT/EACCES/etc.) when the file cannot be opened — the caller
+// uses that to distinguish "missing file" (return null) from "present file
+// with unparseable first line" (fall back to filename basename).
+async function defaultFirstLineReader(filePath) {
+  const stream = createReadStream(filePath, { encoding: "utf8" });
+  // Surface open errors (ENOENT/EACCES) as a rejection so the caller can
+  // tell the file apart from present-but-unreadable content.
+  const openError = new Promise((_, reject) => {
+    stream.once("error", reject);
+  });
+  const rl = createInterface({ input: stream, crlfDelay: Infinity });
   try {
-    content = await readFile(transcriptPath, "utf8");
+    const iterator = rl[Symbol.asyncIterator]();
+    while (true) {
+      const nextPromise = iterator.next();
+      const result = await Promise.race([nextPromise, openError]);
+      if (result.done) return "";
+      const trimmed = result.value.trim();
+      if (trimmed) return trimmed;
+    }
+  } finally {
+    rl.close();
+    stream.destroy();
+  }
+}
+
+let firstLineReaderImpl = defaultFirstLineReader;
+
+// Test seam mirroring src/transcript.ts's _setCreateReadStreamForTests.
+// Pass `null` to restore the default stream-based reader.
+export function _setFirstLineReaderForTests(impl) {
+  firstLineReaderImpl = impl ?? defaultFirstLineReader;
+}
+
+export async function extractSessionId(transcriptPath) {
+  let firstLine = "";
+  try {
+    firstLine = await firstLineReaderImpl(transcriptPath);
   } catch {
     return null;
   }
-  const firstLine = content.split("\n", 1)[0]?.trim() ?? "";
   if (firstLine) {
     try {
       const parsed = JSON.parse(firstLine);
