@@ -57,3 +57,6 @@ temp/
 # Lock files (keep package-lock.json for npm)
 yarn.lock
 bun.lock
+
+# Benchmark reports (per-user, not committed)
+benchmark/report-*.md
