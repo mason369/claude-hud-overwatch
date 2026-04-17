@@ -69,6 +69,55 @@ async function setupPhase2Fixture(homeDir) {
       }),
     );
   }
+  for (let i = 0; i < 3; i += 1) {
+    transcriptLines.push(
+      JSON.stringify({
+        timestamp: `2026-04-17T10:${String(13 + i).padStart(2, "0")}:00.000Z`,
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: `grep-${i}`,
+              name: "Grep",
+              input: { pattern: `todo-${i}` },
+            },
+          ],
+        },
+      }),
+    );
+  }
+  for (let i = 0; i < 2; i += 1) {
+    transcriptLines.push(
+      JSON.stringify({
+        timestamp: `2026-04-17T10:${String(16 + i).padStart(2, "0")}:00.000Z`,
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: `bash-${i}`,
+              name: "Bash",
+              input: { command: `ls -la dir${i}` },
+            },
+          ],
+        },
+      }),
+    );
+  }
+  transcriptLines.push(
+    JSON.stringify({
+      timestamp: `2026-04-17T10:18:00.000Z`,
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "cbm-0",
+            name: "mcp__codebase-memory-mcp__search_graph",
+            input: { project: "demo" },
+          },
+        ],
+      },
+    }),
+  );
   await writeFile(transcriptPath, transcriptLines.join("\n") + "\n", "utf8");
 
   const eventsLines = [
@@ -220,6 +269,15 @@ test("Phase 2 HUD renders R/E ratio, violation breakdown, and baseline drift", a
     assert.match(readEditLine, /读:10/);
     assert.match(readEditLine, /改:3/);
     assert.match(readEditLine, /写:0/);
+
+    // R/M: research = Read(10) + Grep(3) + Bash(2) + CBM(1) = 16; mutation = Edit(3) = 3; ratio = 5.33
+    const researchLine = lines.find((line) => /R\/M:\s*5\.3/.test(line));
+    assert.ok(
+      researchLine,
+      `missing R/M ratio line matching 5.3:\n${plainOutput}`,
+    );
+    assert.match(researchLine, /\u7814\u7A76:16/);
+    assert.match(researchLine, /\u53D8\u66F4:3/);
 
     const breakdownLine = lines.find(
       (line) => line.includes("\u26A0") && line.includes("违规:"),
