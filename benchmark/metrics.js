@@ -20,12 +20,21 @@ function extractToolCalls(entry) {
   );
 }
 
+// Parity with src/transcript.ts:365-374 — interrupts are only counted when:
+//   entry.type === "user" AND block.type === "text" AND
+//   block.text starts with the literal "[Request interrupted by user" prefix.
+// Matching the prefix (not a substring) excludes assistant quotations and
+// tool_result blocks that may quote the phrase mid-text.
 function isInterruptEntry(entry) {
+  if (!entry || entry.type !== "user") return false;
   const content = entry?.message?.content;
   if (!Array.isArray(content)) return false;
   return content.some(
     (b) =>
-      b && typeof b.text === "string" && /Request interrupted/i.test(b.text),
+      b &&
+      b.type === "text" &&
+      typeof b.text === "string" &&
+      b.text.startsWith("[Request interrupted by user"),
   );
 }
 
