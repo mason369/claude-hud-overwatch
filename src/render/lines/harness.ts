@@ -1037,6 +1037,39 @@ function renderInterruptRateLine(
   return `  ${green(prefix + body)}`;
 }
 
+function renderResearchRatioLine(
+  ratio: HarnessResearchRatio,
+  config: HudConfig,
+): string | null {
+  const ratioConfig = config.harness?.researchRatio;
+  if (ratioConfig?.show === false) return null;
+
+  const warningThreshold = ratioConfig?.warning ?? 5;
+  const criticalThreshold = ratioConfig?.critical ?? 3;
+
+  const { ratio: value, research, mutation } = ratio;
+  const ratioStr = value.toFixed(1);
+  const label = t("harnessResearchRatio");
+  const researchLabel = t("harnessResearchLabel");
+  const mutationLabel = t("harnessMutationLabel");
+  const body = `${label}: ${ratioStr} | ${researchLabel}:${research} ${mutationLabel}:${mutation}`;
+  const prefix = "\uD83D\uDD2C ";
+
+  if (research + mutation === 0) {
+    return `  ${dim(prefix + body)}`;
+  }
+
+  if (value < criticalThreshold) {
+    return `  ${red(prefix + body)}`;
+  }
+
+  if (value < warningThreshold) {
+    return `  ${yellow(prefix + body)}`;
+  }
+
+  return `  ${green(prefix + body)}`;
+}
+
 function renderViolationBreakdownLine(
   breakdown: Record<string, number>,
   config: HudConfig,
@@ -1216,6 +1249,11 @@ export function renderHarnessLines(ctx: RenderContext): string[] {
 
   if (health.interruptRate) {
     const line = renderInterruptRateLine(health.interruptRate, config);
+    if (line) lines.push(line);
+  }
+
+  if (health.researchRatio) {
+    const line = renderResearchRatioLine(health.researchRatio, config);
     if (line) lines.push(line);
   }
 
