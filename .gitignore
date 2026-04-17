@@ -60,3 +60,6 @@ bun.lock
 
 # Benchmark reports (per-user, not committed)
 benchmark/report-*.md
+
+# Agent team orchestration state (per-session UUID subdirs)
+orchestration/
