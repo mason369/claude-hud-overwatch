@@ -7,6 +7,7 @@ import type {
   HarnessComponentState,
   HarnessRecentEvent,
   HarnessReadEditRatio,
+  HarnessResearchRatio,
   HarnessBaseline,
   HarnessInterruptRate,
   ComponentStatus,
@@ -830,6 +831,40 @@ export function computeReadEditRatio(
   if (reads + edits + writes === 0) return null;
   const denom = Math.max(edits + writes, 1);
   return { ratio: reads / denom, reads, edits, writes };
+}
+
+export function computeResearchRatio(
+  toolCounts: Record<string, number> | undefined,
+): HarnessResearchRatio | null {
+  if (!toolCounts) return null;
+  const reads = toolCounts.Read ?? 0;
+  const greps = toolCounts.Grep ?? 0;
+  const globs = toolCounts.Glob ?? 0;
+  const bashes = toolCounts.Bash ?? 0;
+  const cbm = Object.entries(toolCounts)
+    .filter(([name]) => name.startsWith("mcp__codebase-memory-mcp__"))
+    .reduce((sum, [, n]) => sum + (Number.isFinite(n) ? n : 0), 0);
+  const edits = toolCounts.Edit ?? 0;
+  const writes = toolCounts.Write ?? 0;
+  const notebookEdits = toolCounts.NotebookEdit ?? 0;
+  const research = reads + greps + globs + bashes + cbm;
+  const mutation = edits + writes + notebookEdits;
+  if (research + mutation === 0) return null;
+  return {
+    ratio: research / Math.max(mutation, 1),
+    research,
+    mutation,
+    breakdown: {
+      reads,
+      greps,
+      globs,
+      bashes,
+      cbm,
+      edits,
+      writes,
+      notebookEdits,
+    },
+  };
 }
 
 export function computeInterruptRate(
