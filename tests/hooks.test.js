@@ -1814,6 +1814,87 @@ test("edit-quality-guard R1 allows Edit with multi-line old_string even when sho
   }
 });
 
+test("edit-quality-guard R1 blocks Edit with short literal backslash-n old_string (no real newline)", async (t) => {
+  const homeDir = await mkdtemp(
+    path.join(tmpdir(), "claude-hud-edit-quality-home-"),
+  );
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+
+    const result = runHook("edit-quality-guard.sh", {
+      input: JSON.stringify({
+        tool_name: "Edit",
+        tool_input: {
+          file_path: "/tmp/scratch.js",
+          old_string: "a\\nb",
+          new_string: "c\\nd",
+        },
+        session_id: "session-edit-quality-r1-literal",
+        transcript_path: "C:/tmp/session-edit-quality-r1-literal.jsonl",
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    if (skipIfSpawnUnavailable(result, t)) return;
+
+    assert.equal(
+      result.status,
+      2,
+      `literal backslash-n (no real newline) should still block as single-line short\n${result.stdout}\n${result.stderr}`,
+    );
+    assert.match(result.stderr, /Edit Quality Guard R1/);
+  } finally {
+    restoreEnvVar("HOME", originalHome);
+    restoreEnvVar("USERPROFILE", originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test("edit-quality-guard R1 allows Edit at exact 10-char boundary", async (t) => {
+  const homeDir = await mkdtemp(
+    path.join(tmpdir(), "claude-hud-edit-quality-home-"),
+  );
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+
+    const result = runHook("edit-quality-guard.sh", {
+      input: JSON.stringify({
+        tool_name: "Edit",
+        tool_input: {
+          file_path: "/tmp/scratch.js",
+          old_string: "0123456789",
+          new_string: "abcdefghij",
+        },
+        session_id: "session-edit-quality-r1-boundary",
+        transcript_path: "C:/tmp/session-edit-quality-r1-boundary.jsonl",
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    if (skipIfSpawnUnavailable(result, t)) return;
+
+    assert.equal(
+      result.status,
+      0,
+      `exactly 10-char old_string should pass R1 (threshold is <10)\n${result.stdout}\n${result.stderr}`,
+    );
+  } finally {
+    restoreEnvVar("HOME", originalHome);
+    restoreEnvVar("USERPROFILE", originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
 test("edit-quality-guard R1 allows Edit with long single-line old_string", async (t) => {
   const homeDir = await mkdtemp(
     path.join(tmpdir(), "claude-hud-edit-quality-home-"),

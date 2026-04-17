@@ -575,9 +575,7 @@ export function calculateHealth(input: HealthInput): number {
 
   const baseScore = (installedWeight / TOTAL_WEIGHT) * 60;
   const activeScore =
-    installedIds.size > 0
-      ? (activeInstalledCount / installedIds.size) * 20
-      : 0;
+    installedIds.size > 0 ? (activeInstalledCount / installedIds.size) * 20 : 0;
   const stabilityScore = Math.min(nonViolationCount / 10, 1) * 20;
   const violationPenalty = Math.min(violationCount * 5, 20);
 
@@ -1000,12 +998,21 @@ function renderBaselineLine(
   const sessions = baseline.sessionCount;
   const base = `\uD83D\uDCCA ${t("harnessBaseline")}: ${t("harnessReadEdit")} ${medianStr} (${sessions}${t("harnessBaselineSessions")})`;
 
-  if (!current) {
+  if (!current || current.edits + current.writes === 0) {
     return `  ${dim(base)}`;
   }
 
   const z = computeBaselineZScore(current.ratio, baseline);
   if (z === null) {
+    if (
+      baseline.rEMad === 0 &&
+      baseline.rEMedian !== null &&
+      Math.abs(current.ratio - baseline.rEMedian) >= 0.1
+    ) {
+      const arrow = current.ratio < baseline.rEMedian ? "\u2193" : "\u2191";
+      const full = `${base} | ${t("harnessBaselineDeviation")}: ${arrow}`;
+      return `  ${yellow(full)}`;
+    }
     return `  ${dim(base)}`;
   }
 

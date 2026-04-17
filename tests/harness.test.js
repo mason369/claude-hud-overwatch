@@ -1392,6 +1392,85 @@ test('renderHarnessLines renders baseline deviation in yellow when |z| between w
   assert.ok(rawBaseLine.includes('\x1b[33m'), `expected yellow ANSI, got ${JSON.stringify(rawBaseLine)}`);
 });
 
+test('renderHarnessLines shows directional arrow in yellow when MAD=0 and current deviates', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 60,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      readEditRatio: { ratio: 3.0, reads: 6, edits: 2, writes: 0 },
+      baseline: { rEMedian: 5.0, rEMad: 0, rEZScore: null, sessionCount: 6 },
+    },
+  });
+
+  const rawLines = renderHarnessLines(ctx);
+  const plain = rawLines.map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  const baseLine = plain.find(line => line.includes('基线:') && line.includes('5.0'));
+  assert.ok(baseLine, `expected baseline line with flat-MAD arrow, got ${JSON.stringify(plain)}`);
+  assert.ok(baseLine.includes('↓'), `expected down arrow (current<median), got ${baseLine}`);
+  assert.ok(!baseLine.includes('σ'), `expected no σ value when MAD=0, got ${baseLine}`);
+
+  const rawBaseLine = rawLines.find(line => line.replace(/\x1b\[[0-9;]*m/g, '').includes('5.0'));
+  assert.ok(rawBaseLine.includes('\x1b[33m'), `expected yellow ANSI, got ${JSON.stringify(rawBaseLine)}`);
+});
+
+test('renderHarnessLines stays dim when MAD=0 and current matches median within epsilon', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 80,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      readEditRatio: { ratio: 5.02, reads: 10, edits: 2, writes: 0 },
+      baseline: { rEMedian: 5.0, rEMad: 0, rEZScore: null, sessionCount: 6 },
+    },
+  });
+
+  const rawLines = renderHarnessLines(ctx);
+  const rawBaseLine = rawLines.find(line => line.replace(/\x1b\[[0-9;]*m/g, '').includes('基线:'));
+  assert.ok(rawBaseLine, 'expected baseline line');
+  assert.ok(rawBaseLine.includes('\x1b[2m'), `expected dim ANSI when within epsilon, got ${JSON.stringify(rawBaseLine)}`);
+  const plain = rawBaseLine.replace(/\x1b\[[0-9;]*m/g, '');
+  assert.ok(!plain.includes('↑') && !plain.includes('↓'), `expected no arrow, got ${plain}`);
+});
+
+test('renderHarnessLines dims baseline without drift when edits+writes=0 (reads-only session)', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 60,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      readEditRatio: { ratio: 7, reads: 7, edits: 0, writes: 0 },
+      baseline: { rEMedian: 4.5, rEMad: 0.5, rEZScore: null, sessionCount: 10 },
+    },
+  });
+
+  const rawLines = renderHarnessLines(ctx);
+  const rawBaseLine = rawLines.find(line => line.replace(/\x1b\[[0-9;]*m/g, '').includes('基线:'));
+  assert.ok(rawBaseLine, 'expected baseline line');
+  assert.ok(rawBaseLine.includes('\x1b[2m'), `expected dim when reads-only, got ${JSON.stringify(rawBaseLine)}`);
+  const plain = rawBaseLine.replace(/\x1b\[[0-9;]*m/g, '');
+  assert.ok(!plain.includes('σ'), `expected no σ for reads-only session, got ${plain}`);
+  assert.ok(!plain.includes('当前偏离'), `expected no deviation label, got ${plain}`);
+});
+
 test('renderHarnessLines omits baseline line when baseline.enabled=false', () => {
   setLanguage('zh');
 
