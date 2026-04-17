@@ -96,6 +96,10 @@ export const zh = {
     harnessInterruptRate: "\u4E2D\u65AD\u7387",
     harnessInterruptLabel: "\u4E2D\u65AD",
     harnessInterruptUnit: "\u6B21/\u5343\u6B21\u5DE5\u5177",
+    // Harness R/M metric
+    harnessResearchRatio: "R/M",
+    harnessResearchLabel: "\u7814\u7A76",
+    harnessMutationLabel: "\u53D8\u66F4",
     // Harness Phase 2: reasons
     "harnessReason.editQuality.r1": "\u6A21\u5F0F\u8FC7\u77ED\u6613\u8BEF\u5339\u914D",
     "harnessReason.editQuality.r2": "\u672A Grep \u524D\u4E0D\u53EF\u5168\u5C40\u66FF\u6362",

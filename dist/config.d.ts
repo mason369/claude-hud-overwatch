@@ -100,6 +100,11 @@ export interface HudConfig {
             warning?: number;
             critical?: number;
         };
+        researchRatio?: {
+            show?: boolean;
+            warning?: number;
+            critical?: number;
+        };
     };
     colors: HudColorOverrides;
 }

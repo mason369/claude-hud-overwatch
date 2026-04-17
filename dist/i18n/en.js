@@ -96,6 +96,10 @@ export const en = {
     harnessInterruptRate: "Interrupt",
     harnessInterruptLabel: "Int",
     harnessInterruptUnit: "/1k tools",
+    // Harness R/M metric
+    harnessResearchRatio: "R/M",
+    harnessResearchLabel: "Research",
+    harnessMutationLabel: "Mutation",
     // Harness Phase 2: reasons
     "harnessReason.editQuality.r1": "pattern too short risks mismatch",
     "harnessReason.editQuality.r2": "cannot replace_all without a prior Grep",
