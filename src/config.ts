@@ -151,6 +151,11 @@ export interface HudConfig {
       warning?: number;
       critical?: number;
     };
+    researchRatio?: {
+      show?: boolean;
+      warning?: number;
+      critical?: number;
+    };
   };
   colors: HudColorOverrides;
 }
@@ -226,6 +231,11 @@ export const DEFAULT_CONFIG: HudConfig = {
       show: true,
       warning: 2,
       critical: 5,
+    },
+    researchRatio: {
+      show: true,
+      warning: 5,
+      critical: 3,
     },
   },
   colors: {
@@ -668,6 +678,24 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
         migrated.harness.interruptRate.critical >= 0
           ? migrated.harness.interruptRate.critical
           : DEFAULT_CONFIG.harness.interruptRate!.critical,
+    },
+    researchRatio: {
+      show:
+        typeof migrated.harness?.researchRatio?.show === "boolean"
+          ? migrated.harness.researchRatio.show
+          : DEFAULT_CONFIG.harness.researchRatio!.show,
+      warning:
+        typeof migrated.harness?.researchRatio?.warning === "number" &&
+        Number.isFinite(migrated.harness.researchRatio.warning) &&
+        migrated.harness.researchRatio.warning >= 0
+          ? migrated.harness.researchRatio.warning
+          : DEFAULT_CONFIG.harness.researchRatio!.warning,
+      critical:
+        typeof migrated.harness?.researchRatio?.critical === "number" &&
+        Number.isFinite(migrated.harness.researchRatio.critical) &&
+        migrated.harness.researchRatio.critical >= 0
+          ? migrated.harness.researchRatio.critical
+          : DEFAULT_CONFIG.harness.researchRatio!.critical,
     },
   };
 
