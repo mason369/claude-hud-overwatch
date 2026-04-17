@@ -141,6 +141,22 @@ export interface HarnessReadEditRatio {
   writes: number;
 }
 
+export interface HarnessResearchRatio {
+  ratio: number;
+  research: number;
+  mutation: number;
+  breakdown: {
+    reads: number;
+    greps: number;
+    globs: number;
+    bashes: number;
+    cbm: number;
+    edits: number;
+    writes: number;
+    notebookEdits: number;
+  };
+}
+
 export interface HarnessBaseline {
   rEMedian: number | null;
   rEMad: number | null;
@@ -170,6 +186,8 @@ export interface HarnessHealth {
   baseline?: HarnessBaseline;
   /** User-interruption rate per 1000 tool calls; undefined when no tools yet. */
   interruptRate?: HarnessInterruptRate;
+  /** Read+Grep+Glob+Bash+CBM / Edit+Write+NotebookEdit ratio; undefined when no tools yet. */
+  researchRatio?: HarnessResearchRatio;
 }
 
 export interface RenderContext {
