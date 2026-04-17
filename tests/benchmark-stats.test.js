@@ -43,6 +43,33 @@ test("mannWhitneyU returns p=NaN for empty inputs", () => {
   assert.ok(Number.isNaN(p));
 });
 
+test("mannWhitneyU applies tie correction for heavily tied data", () => {
+  // Heavily tied: 15 zeros and 5 ones split 9/1 vs 6/4 between groups.
+  // Verified via scipy.stats.mannwhitneyu(method='asymptotic', use_continuity=False):
+  //   Without tie correction, p = 0.2568
+  //   With tie correction,    p = 0.1311
+  // The threshold < 0.2 fails under the old uncorrected variance and passes
+  // under the corrected variance.
+  const xs = [0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+  const ys = [0, 0, 0, 0, 0, 0, 1, 1, 1, 1];
+  const { U, p } = mannWhitneyU(xs, ys);
+  assert.equal(U, 35, `expected U=35 for this dataset, got ${U}`);
+  assert.ok(p < 0.2, `expected tie-corrected p < 0.2, got ${p}`);
+  // Sanity: tie correction shrinks variance so p must still be finite and > 0.
+  assert.ok(p > 0 && Number.isFinite(p));
+});
+
+test("mannWhitneyU reduces to classic formula with no ties", () => {
+  // No ties in combined data — ΣT = 0 so tie-corrected variance equals the
+  // classic n1*n2*(N+1)/12 formula. Matches the unchanged green case below.
+  const xs = [10, 12, 14, 16, 18];
+  const ys = [1, 2, 3, 4, 5];
+  const { U, p } = mannWhitneyU(xs, ys);
+  assert.equal(U, 0);
+  // Matches existing behavior: p ≈ 0.0090 for this classic worked example.
+  assert.ok(p < 0.02);
+});
+
 test("cliffDelta ranges in [-1, 1]", () => {
   assert.equal(cliffDelta([10, 20, 30], [1, 2, 3]), 1);
   assert.equal(cliffDelta([1, 2, 3], [10, 20, 30]), -1);
