@@ -64,7 +64,7 @@ export async function main(overrides = {}) {
             ? await deps.getMemoryUsage()
             : null;
         const harness = config.harness?.enabled
-            ? getHarnessHealth(stdin, config)
+            ? getHarnessHealth(stdin, config, transcript)
             : undefined;
         const ctx = {
             stdin,
@@ -95,15 +95,17 @@ export function formatSessionDuration(sessionStart, now = () => Date.now()) {
     }
     const ms = now() - sessionStart.getTime();
     const mins = Math.floor(ms / 60000);
-    const m = t('format.minutes');
-    const h = t('format.hours');
+    const m = t("format.minutes");
+    const h = t("format.hours");
     if (mins < 1)
         return `<1${m}`;
     if (mins < 60)
         return `${mins}${m}`;
     const hours = Math.floor(mins / 60);
     const remainingMins = mins % 60;
-    return remainingMins === 0 ? `${hours}${h}` : `${hours}${h}${remainingMins}${m}`;
+    return remainingMins === 0
+        ? `${hours}${h}`
+        : `${hours}${h}${remainingMins}${m}`;
 }
 const scriptPath = fileURLToPath(import.meta.url);
 const argvPath = process.argv[1];

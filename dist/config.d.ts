@@ -1,7 +1,7 @@
-import type { Language } from './i18n/types.js';
-export type LineLayoutType = 'compact' | 'expanded';
-export type AutocompactBufferMode = 'enabled' | 'disabled';
-export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
+import type { Language } from "./i18n/types.js";
+export type LineLayoutType = "compact" | "expanded";
+export type AutocompactBufferMode = "enabled" | "disabled";
+export type ContextValueMode = "percent" | "tokens" | "remaining" | "both";
 /**
  * Controls how the model name is displayed in the HUD badge.
  *
@@ -9,9 +9,9 @@ export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
  *   compact: Strip redundant context-window suffix (e.g. "Opus 4.6")
  *   short:   Strip context suffix AND "Claude " prefix (e.g. "Opus 4.6")
  */
-export type ModelFormatMode = 'full' | 'compact' | 'short';
-export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'harness' | 'tools' | 'agents' | 'todos';
-export type HudColorName = 'dim' | 'red' | 'green' | 'yellow' | 'magenta' | 'cyan' | 'brightBlue' | 'brightMagenta';
+export type ModelFormatMode = "full" | "compact" | "short";
+export type HudElement = "project" | "context" | "usage" | "memory" | "environment" | "harness" | "tools" | "agents" | "todos";
+export type HudColorName = "dim" | "red" | "green" | "yellow" | "magenta" | "cyan" | "brightBlue" | "brightMagenta";
 /** A color value: named preset, 256-color index (0-255), or hex string (#rrggbb). */
 export type HudColorValue = HudColorName | number | string;
 export interface HudColorOverrides {
@@ -79,6 +79,21 @@ export interface HudConfig {
         scoreThresholds: {
             warning: number;
             critical: number;
+        };
+        readEditRatio?: {
+            show?: boolean;
+            warning?: number;
+            critical?: number;
+        };
+        violationBreakdown?: {
+            show?: boolean;
+        };
+        baseline?: {
+            enabled?: boolean;
+            windowSize?: number;
+            minSessions?: number;
+            warnZ?: number;
+            criticalZ?: number;
         };
     };
     colors: HudColorOverrides;

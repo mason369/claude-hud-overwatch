@@ -1,32 +1,32 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import { getHudPluginDir } from './claude-config-dir.js';
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+import { getHudPluginDir } from "./claude-config-dir.js";
 export const DEFAULT_ELEMENT_ORDER = [
-    'project',
-    'context',
-    'usage',
-    'memory',
-    'environment',
-    'harness',
-    'tools',
-    'agents',
-    'todos',
+    "project",
+    "context",
+    "usage",
+    "memory",
+    "environment",
+    "harness",
+    "tools",
+    "agents",
+    "todos",
 ];
 const LEGACY_ELEMENT_ORDER = [
-    'project',
-    'context',
-    'usage',
-    'memory',
-    'environment',
-    'tools',
-    'agents',
-    'todos',
+    "project",
+    "context",
+    "usage",
+    "memory",
+    "environment",
+    "tools",
+    "agents",
+    "todos",
 ];
 const KNOWN_ELEMENTS = new Set(DEFAULT_ELEMENT_ORDER);
 export const DEFAULT_CONFIG = {
-    language: 'zh',
-    lineLayout: 'expanded',
+    language: "zh",
+    lineLayout: "expanded",
     showSeparators: true,
     pathLevels: 2,
     elementOrder: [...DEFAULT_ELEMENT_ORDER],
@@ -42,7 +42,7 @@ export const DEFAULT_CONFIG = {
         showModel: true,
         showProject: true,
         showContextBar: true,
-        contextValue: 'both',
+        contextValue: "both",
         showConfigCounts: true,
         showCost: true,
         showDuration: true,
@@ -58,13 +58,13 @@ export const DEFAULT_CONFIG = {
         showMemoryUsage: true,
         showSessionTokens: true,
         showOutputStyle: true,
-        autocompactBuffer: 'enabled',
+        autocompactBuffer: "enabled",
         usageThreshold: 0,
         sevenDayThreshold: 0,
         environmentThreshold: 0,
-        modelFormat: 'full',
-        modelOverride: '',
-        customLine: '',
+        modelFormat: "full",
+        modelOverride: "",
+        customLine: "",
     },
     harness: {
         enabled: true,
@@ -76,60 +76,81 @@ export const DEFAULT_CONFIG = {
             warning: 70,
             critical: 50,
         },
+        readEditRatio: {
+            show: true,
+            warning: 2.5,
+            critical: 1.5,
+        },
+        violationBreakdown: {
+            show: true,
+        },
+        baseline: {
+            enabled: true,
+            windowSize: 30,
+            minSessions: 5,
+            warnZ: 1,
+            criticalZ: 2,
+        },
     },
     colors: {
-        context: 'green',
-        usage: 'brightBlue',
-        warning: 'yellow',
-        usageWarning: 'brightMagenta',
-        critical: 'red',
-        model: 'cyan',
-        project: 'yellow',
-        git: 'magenta',
-        gitBranch: 'cyan',
-        label: 'dim',
+        context: "green",
+        usage: "brightBlue",
+        warning: "yellow",
+        usageWarning: "brightMagenta",
+        critical: "red",
+        model: "cyan",
+        project: "yellow",
+        git: "magenta",
+        gitBranch: "cyan",
+        label: "dim",
         custom: 208,
     },
 };
 export function getConfigPath() {
     const homeDir = os.homedir();
-    return path.join(getHudPluginDir(homeDir), 'config.json');
+    return path.join(getHudPluginDir(homeDir), "config.json");
 }
 function validatePathLevels(value) {
     return value === 1 || value === 2 || value === 3;
 }
 function validateLineLayout(value) {
-    return value === 'compact' || value === 'expanded';
+    return value === "compact" || value === "expanded";
 }
 function validateAutocompactBuffer(value) {
-    return value === 'enabled' || value === 'disabled';
+    return value === "enabled" || value === "disabled";
 }
 function validateContextValue(value) {
-    return value === 'percent' || value === 'tokens' || value === 'remaining' || value === 'both';
+    return (value === "percent" ||
+        value === "tokens" ||
+        value === "remaining" ||
+        value === "both");
 }
 function validateLanguage(value) {
-    return value === 'en' || value === 'zh';
+    return value === "en" || value === "zh";
 }
 function validateModelFormat(value) {
-    return value === 'full' || value === 'compact' || value === 'short';
+    return value === "full" || value === "compact" || value === "short";
 }
 function validateColorName(value) {
-    return value === 'dim'
-        || value === 'red'
-        || value === 'green'
-        || value === 'yellow'
-        || value === 'magenta'
-        || value === 'cyan'
-        || value === 'brightBlue'
-        || value === 'brightMagenta';
+    return (value === "dim" ||
+        value === "red" ||
+        value === "green" ||
+        value === "yellow" ||
+        value === "magenta" ||
+        value === "cyan" ||
+        value === "brightBlue" ||
+        value === "brightMagenta");
 }
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 function validateColorValue(value) {
     if (validateColorName(value))
         return true;
-    if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 255)
+    if (typeof value === "number" &&
+        Number.isInteger(value) &&
+        value >= 0 &&
+        value <= 255)
         return true;
-    if (typeof value === 'string' && HEX_COLOR_PATTERN.test(value))
+    if (typeof value === "string" && HEX_COLOR_PATTERN.test(value))
         return true;
     return false;
 }
@@ -140,7 +161,7 @@ function validateElementOrder(value) {
     const seen = new Set();
     const elementOrder = [];
     for (const item of value) {
-        if (typeof item !== 'string' || !KNOWN_ELEMENTS.has(item)) {
+        if (typeof item !== "string" || !KNOWN_ELEMENTS.has(item)) {
             continue;
         }
         const element = item;
@@ -160,7 +181,7 @@ function shouldUpgradeLegacyElementOrder(value, hasHarnessConfig) {
         return false;
     }
     for (const [index, item] of value.entries()) {
-        if (typeof item !== 'string' || item !== LEGACY_ELEMENT_ORDER[index]) {
+        if (typeof item !== "string" || item !== LEGACY_ELEMENT_ORDER[index]) {
             return false;
         }
     }
@@ -168,49 +189,50 @@ function shouldUpgradeLegacyElementOrder(value, hasHarnessConfig) {
 }
 function upgradeLegacyElementOrder(value) {
     const upgraded = [...value];
-    const environmentIndex = upgraded.indexOf('environment');
+    const environmentIndex = upgraded.indexOf("environment");
     const insertAt = environmentIndex >= 0 ? environmentIndex + 1 : upgraded.length;
-    upgraded.splice(insertAt, 0, 'harness');
+    upgraded.splice(insertAt, 0, "harness");
     return upgraded;
 }
 function migrateConfig(userConfig) {
     const migrated = { ...userConfig };
-    if ('layout' in userConfig && !('lineLayout' in userConfig)) {
-        if (typeof userConfig.layout === 'string') {
+    if ("layout" in userConfig && !("lineLayout" in userConfig)) {
+        if (typeof userConfig.layout === "string") {
             // Legacy string migration (v0.0.x → v0.1.x)
-            if (userConfig.layout === 'separators') {
-                migrated.lineLayout = 'compact';
+            if (userConfig.layout === "separators") {
+                migrated.lineLayout = "compact";
                 migrated.showSeparators = true;
             }
             else {
-                migrated.lineLayout = 'compact';
+                migrated.lineLayout = "compact";
                 migrated.showSeparators = false;
             }
         }
-        else if (typeof userConfig.layout === 'object' && userConfig.layout !== null) {
+        else if (typeof userConfig.layout === "object" &&
+            userConfig.layout !== null) {
             // Object layout written by third-party tools — extract nested fields
             const obj = userConfig.layout;
-            if (typeof obj.lineLayout === 'string')
+            if (typeof obj.lineLayout === "string")
                 migrated.lineLayout = obj.lineLayout;
-            if (typeof obj.showSeparators === 'boolean')
+            if (typeof obj.showSeparators === "boolean")
                 migrated.showSeparators = obj.showSeparators;
-            if (typeof obj.pathLevels === 'number')
+            if (typeof obj.pathLevels === "number")
                 migrated.pathLevels = obj.pathLevels;
         }
         delete migrated.layout;
     }
-    if (shouldUpgradeLegacyElementOrder(userConfig.elementOrder, 'harness' in userConfig)) {
+    if (shouldUpgradeLegacyElementOrder(userConfig.elementOrder, "harness" in userConfig)) {
         migrated.elementOrder = upgradeLegacyElementOrder(userConfig.elementOrder);
     }
     return migrated;
 }
 function validateThreshold(value, max = 100) {
-    if (typeof value !== 'number')
+    if (typeof value !== "number")
         return 0;
     return Math.max(0, Math.min(max, value));
 }
 function validateCountThreshold(value) {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
         return 0;
     }
     return Math.max(0, Math.floor(value));
@@ -223,7 +245,7 @@ export function mergeConfig(userConfig) {
     const lineLayout = validateLineLayout(migrated.lineLayout)
         ? migrated.lineLayout
         : DEFAULT_CONFIG.lineLayout;
-    const showSeparators = typeof migrated.showSeparators === 'boolean'
+    const showSeparators = typeof migrated.showSeparators === "boolean"
         ? migrated.showSeparators
         : DEFAULT_CONFIG.showSeparators;
     const pathLevels = validatePathLevels(migrated.pathLevels)
@@ -231,77 +253,77 @@ export function mergeConfig(userConfig) {
         : DEFAULT_CONFIG.pathLevels;
     const elementOrder = validateElementOrder(migrated.elementOrder);
     const gitStatus = {
-        enabled: typeof migrated.gitStatus?.enabled === 'boolean'
+        enabled: typeof migrated.gitStatus?.enabled === "boolean"
             ? migrated.gitStatus.enabled
             : DEFAULT_CONFIG.gitStatus.enabled,
-        showDirty: typeof migrated.gitStatus?.showDirty === 'boolean'
+        showDirty: typeof migrated.gitStatus?.showDirty === "boolean"
             ? migrated.gitStatus.showDirty
             : DEFAULT_CONFIG.gitStatus.showDirty,
-        showAheadBehind: typeof migrated.gitStatus?.showAheadBehind === 'boolean'
+        showAheadBehind: typeof migrated.gitStatus?.showAheadBehind === "boolean"
             ? migrated.gitStatus.showAheadBehind
             : DEFAULT_CONFIG.gitStatus.showAheadBehind,
-        showFileStats: typeof migrated.gitStatus?.showFileStats === 'boolean'
+        showFileStats: typeof migrated.gitStatus?.showFileStats === "boolean"
             ? migrated.gitStatus.showFileStats
             : DEFAULT_CONFIG.gitStatus.showFileStats,
         pushWarningThreshold: validateCountThreshold(migrated.gitStatus?.pushWarningThreshold),
         pushCriticalThreshold: validateCountThreshold(migrated.gitStatus?.pushCriticalThreshold),
     };
     const display = {
-        showModel: typeof migrated.display?.showModel === 'boolean'
+        showModel: typeof migrated.display?.showModel === "boolean"
             ? migrated.display.showModel
             : DEFAULT_CONFIG.display.showModel,
-        showProject: typeof migrated.display?.showProject === 'boolean'
+        showProject: typeof migrated.display?.showProject === "boolean"
             ? migrated.display.showProject
             : DEFAULT_CONFIG.display.showProject,
-        showContextBar: typeof migrated.display?.showContextBar === 'boolean'
+        showContextBar: typeof migrated.display?.showContextBar === "boolean"
             ? migrated.display.showContextBar
             : DEFAULT_CONFIG.display.showContextBar,
         contextValue: validateContextValue(migrated.display?.contextValue)
             ? migrated.display.contextValue
             : DEFAULT_CONFIG.display.contextValue,
-        showConfigCounts: typeof migrated.display?.showConfigCounts === 'boolean'
+        showConfigCounts: typeof migrated.display?.showConfigCounts === "boolean"
             ? migrated.display.showConfigCounts
             : DEFAULT_CONFIG.display.showConfigCounts,
-        showCost: typeof migrated.display?.showCost === 'boolean'
+        showCost: typeof migrated.display?.showCost === "boolean"
             ? migrated.display.showCost
             : DEFAULT_CONFIG.display.showCost,
-        showDuration: typeof migrated.display?.showDuration === 'boolean'
+        showDuration: typeof migrated.display?.showDuration === "boolean"
             ? migrated.display.showDuration
             : DEFAULT_CONFIG.display.showDuration,
-        showSpeed: typeof migrated.display?.showSpeed === 'boolean'
+        showSpeed: typeof migrated.display?.showSpeed === "boolean"
             ? migrated.display.showSpeed
             : DEFAULT_CONFIG.display.showSpeed,
-        showTokenBreakdown: typeof migrated.display?.showTokenBreakdown === 'boolean'
+        showTokenBreakdown: typeof migrated.display?.showTokenBreakdown === "boolean"
             ? migrated.display.showTokenBreakdown
             : DEFAULT_CONFIG.display.showTokenBreakdown,
-        showUsage: typeof migrated.display?.showUsage === 'boolean'
+        showUsage: typeof migrated.display?.showUsage === "boolean"
             ? migrated.display.showUsage
             : DEFAULT_CONFIG.display.showUsage,
-        usageBarEnabled: typeof migrated.display?.usageBarEnabled === 'boolean'
+        usageBarEnabled: typeof migrated.display?.usageBarEnabled === "boolean"
             ? migrated.display.usageBarEnabled
             : DEFAULT_CONFIG.display.usageBarEnabled,
-        showTools: typeof migrated.display?.showTools === 'boolean'
+        showTools: typeof migrated.display?.showTools === "boolean"
             ? migrated.display.showTools
             : DEFAULT_CONFIG.display.showTools,
-        showAgents: typeof migrated.display?.showAgents === 'boolean'
+        showAgents: typeof migrated.display?.showAgents === "boolean"
             ? migrated.display.showAgents
             : DEFAULT_CONFIG.display.showAgents,
-        showTodos: typeof migrated.display?.showTodos === 'boolean'
+        showTodos: typeof migrated.display?.showTodos === "boolean"
             ? migrated.display.showTodos
             : DEFAULT_CONFIG.display.showTodos,
-        showSessionName: typeof migrated.display?.showSessionName === 'boolean'
+        showSessionName: typeof migrated.display?.showSessionName === "boolean"
             ? migrated.display.showSessionName
             : DEFAULT_CONFIG.display.showSessionName,
-        showClaudeCodeVersion: typeof migrated.display?.showClaudeCodeVersion === 'boolean'
+        showClaudeCodeVersion: typeof migrated.display?.showClaudeCodeVersion === "boolean"
             ? migrated.display.showClaudeCodeVersion
             : DEFAULT_CONFIG.display.showClaudeCodeVersion,
-        showMemoryUsage: typeof migrated.display?.showMemoryUsage === 'boolean'
+        showMemoryUsage: typeof migrated.display?.showMemoryUsage === "boolean"
             ? migrated.display.showMemoryUsage
             : DEFAULT_CONFIG.display.showMemoryUsage,
-        showSessionTokens: typeof migrated.display?.showSessionTokens === 'boolean'
+        showSessionTokens: typeof migrated.display?.showSessionTokens === "boolean"
             ? migrated.display.showSessionTokens
             : DEFAULT_CONFIG.display.showSessionTokens,
-        showOutputStyle: typeof migrated.display?.showOutputStyle === 'boolean'
+        showOutputStyle: typeof migrated.display?.showOutputStyle === "boolean"
             ? migrated.display.showOutputStyle
             : DEFAULT_CONFIG.display.showOutputStyle,
         autocompactBuffer: validateAutocompactBuffer(migrated.display?.autocompactBuffer)
@@ -313,32 +335,75 @@ export function mergeConfig(userConfig) {
         modelFormat: validateModelFormat(migrated.display?.modelFormat)
             ? migrated.display.modelFormat
             : DEFAULT_CONFIG.display.modelFormat,
-        modelOverride: typeof migrated.display?.modelOverride === 'string'
+        modelOverride: typeof migrated.display?.modelOverride === "string"
             ? migrated.display.modelOverride.slice(0, 80)
             : DEFAULT_CONFIG.display.modelOverride,
-        customLine: typeof migrated.display?.customLine === 'string'
+        customLine: typeof migrated.display?.customLine === "string"
             ? migrated.display.customLine.slice(0, 80)
             : DEFAULT_CONFIG.display.customLine,
     };
     const harness = {
-        enabled: typeof migrated.harness?.enabled === 'boolean'
+        enabled: typeof migrated.harness?.enabled === "boolean"
             ? migrated.harness.enabled
             : DEFAULT_CONFIG.harness.enabled,
-        showScore: typeof migrated.harness?.showScore === 'boolean'
+        showScore: typeof migrated.harness?.showScore === "boolean"
             ? migrated.harness.showScore
             : DEFAULT_CONFIG.harness.showScore,
-        showGuards: typeof migrated.harness?.showGuards === 'boolean'
+        showGuards: typeof migrated.harness?.showGuards === "boolean"
             ? migrated.harness.showGuards
             : DEFAULT_CONFIG.harness.showGuards,
-        showSensors: typeof migrated.harness?.showSensors === 'boolean'
+        showSensors: typeof migrated.harness?.showSensors === "boolean"
             ? migrated.harness.showSensors
             : DEFAULT_CONFIG.harness.showSensors,
-        showStats: typeof migrated.harness?.showStats === 'boolean'
+        showStats: typeof migrated.harness?.showStats === "boolean"
             ? migrated.harness.showStats
             : DEFAULT_CONFIG.harness.showStats,
         scoreThresholds: {
-            warning: validateThreshold(migrated.harness?.scoreThresholds?.warning, 100) || DEFAULT_CONFIG.harness.scoreThresholds.warning,
-            critical: validateThreshold(migrated.harness?.scoreThresholds?.critical, 100) || DEFAULT_CONFIG.harness.scoreThresholds.critical,
+            warning: validateThreshold(migrated.harness?.scoreThresholds?.warning, 100) ||
+                DEFAULT_CONFIG.harness.scoreThresholds.warning,
+            critical: validateThreshold(migrated.harness?.scoreThresholds?.critical, 100) ||
+                DEFAULT_CONFIG.harness.scoreThresholds.critical,
+        },
+        readEditRatio: {
+            show: typeof migrated.harness?.readEditRatio?.show === "boolean"
+                ? migrated.harness.readEditRatio.show
+                : DEFAULT_CONFIG.harness.readEditRatio.show,
+            warning: typeof migrated.harness?.readEditRatio?.warning === "number" &&
+                Number.isFinite(migrated.harness.readEditRatio.warning)
+                ? migrated.harness.readEditRatio.warning
+                : DEFAULT_CONFIG.harness.readEditRatio.warning,
+            critical: typeof migrated.harness?.readEditRatio?.critical === "number" &&
+                Number.isFinite(migrated.harness.readEditRatio.critical)
+                ? migrated.harness.readEditRatio.critical
+                : DEFAULT_CONFIG.harness.readEditRatio.critical,
+        },
+        violationBreakdown: {
+            show: typeof migrated.harness?.violationBreakdown?.show === "boolean"
+                ? migrated.harness.violationBreakdown.show
+                : DEFAULT_CONFIG.harness.violationBreakdown.show,
+        },
+        baseline: {
+            enabled: typeof migrated.harness?.baseline?.enabled === "boolean"
+                ? migrated.harness.baseline.enabled
+                : DEFAULT_CONFIG.harness.baseline.enabled,
+            windowSize: typeof migrated.harness?.baseline?.windowSize === "number" &&
+                Number.isFinite(migrated.harness.baseline.windowSize) &&
+                migrated.harness.baseline.windowSize > 0
+                ? Math.floor(migrated.harness.baseline.windowSize)
+                : DEFAULT_CONFIG.harness.baseline.windowSize,
+            minSessions: typeof migrated.harness?.baseline?.minSessions === "number" &&
+                Number.isFinite(migrated.harness.baseline.minSessions) &&
+                migrated.harness.baseline.minSessions > 0
+                ? Math.floor(migrated.harness.baseline.minSessions)
+                : DEFAULT_CONFIG.harness.baseline.minSessions,
+            warnZ: typeof migrated.harness?.baseline?.warnZ === "number" &&
+                Number.isFinite(migrated.harness.baseline.warnZ)
+                ? migrated.harness.baseline.warnZ
+                : DEFAULT_CONFIG.harness.baseline.warnZ,
+            criticalZ: typeof migrated.harness?.baseline?.criticalZ === "number" &&
+                Number.isFinite(migrated.harness.baseline.criticalZ)
+                ? migrated.harness.baseline.criticalZ
+                : DEFAULT_CONFIG.harness.baseline.criticalZ,
         },
     };
     const colors = {
@@ -376,7 +441,17 @@ export function mergeConfig(userConfig) {
             ? migrated.colors.custom
             : DEFAULT_CONFIG.colors.custom,
     };
-    return { language, lineLayout, showSeparators, pathLevels, elementOrder, gitStatus, harness, display, colors };
+    return {
+        language,
+        lineLayout,
+        showSeparators,
+        pathLevels,
+        elementOrder,
+        gitStatus,
+        harness,
+        display,
+        colors,
+    };
 }
 export async function loadConfig() {
     const configPath = getConfigPath();
@@ -384,7 +459,7 @@ export async function loadConfig() {
         if (!fs.existsSync(configPath)) {
             return mergeConfig({});
         }
-        const content = fs.readFileSync(configPath, 'utf-8');
+        const content = fs.readFileSync(configPath, "utf-8");
         const userConfig = JSON.parse(content);
         return mergeConfig(userConfig);
     }

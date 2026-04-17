@@ -1,18 +1,18 @@
-import * as fs from 'fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import * as readline from 'readline';
-import { createHash } from 'node:crypto';
-import { getHudPluginDir } from './claude-config-dir.js';
+import * as fs from "fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import * as readline from "readline";
+import { createHash } from "node:crypto";
+import { getHudPluginDir } from "./claude-config-dir.js";
 let createReadStreamImpl = fs.createReadStream;
 function normalizeTokenCount(value) {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
         return 0;
     }
     return Math.max(0, Math.trunc(value));
 }
 function normalizeSessionTokens(tokens) {
-    if (!tokens || typeof tokens !== 'object') {
+    if (!tokens || typeof tokens !== "object") {
         return undefined;
     }
     const raw = tokens;
@@ -24,8 +24,10 @@ function normalizeSessionTokens(tokens) {
     };
 }
 function getTranscriptCachePath(transcriptPath, homeDir) {
-    const hash = createHash('sha256').update(path.resolve(transcriptPath)).digest('hex');
-    return path.join(getHudPluginDir(homeDir), 'transcript-cache', `${hash}.json`);
+    const hash = createHash("sha256")
+        .update(path.resolve(transcriptPath))
+        .digest("hex");
+    return path.join(getHudPluginDir(homeDir), "transcript-cache", `${hash}.json`);
 }
 function readTranscriptFileState(transcriptPath) {
     try {
@@ -58,6 +60,7 @@ function serializeTranscriptData(data) {
         sessionStart: data.sessionStart?.toISOString(),
         sessionName: data.sessionName,
         sessionTokens: data.sessionTokens,
+        toolCounts: { ...data.toolCounts },
     };
 }
 function deserializeTranscriptData(data) {
@@ -76,16 +79,29 @@ function deserializeTranscriptData(data) {
         sessionStart: data.sessionStart ? new Date(data.sessionStart) : undefined,
         sessionName: data.sessionName,
         sessionTokens: normalizeSessionTokens(data.sessionTokens),
+        toolCounts: normalizeToolCounts(data.toolCounts),
     };
+}
+function normalizeToolCounts(raw) {
+    if (!raw || typeof raw !== "object") {
+        return {};
+    }
+    const out = {};
+    for (const [key, value] of Object.entries(raw)) {
+        if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+            out[key] = Math.trunc(value);
+        }
+    }
+    return out;
 }
 function readTranscriptCache(transcriptPath, state) {
     try {
         const cachePath = getTranscriptCachePath(transcriptPath, os.homedir());
-        const raw = fs.readFileSync(cachePath, 'utf8');
+        const raw = fs.readFileSync(cachePath, "utf8");
         const parsed = JSON.parse(raw);
-        if (parsed.transcriptPath !== path.resolve(transcriptPath)
-            || parsed.transcriptState?.mtimeMs !== state.mtimeMs
-            || parsed.transcriptState?.size !== state.size) {
+        if (parsed.transcriptPath !== path.resolve(transcriptPath) ||
+            parsed.transcriptState?.mtimeMs !== state.mtimeMs ||
+            parsed.transcriptState?.size !== state.size) {
             return null;
         }
         return deserializeTranscriptData(parsed.data);
@@ -103,7 +119,7 @@ function writeTranscriptCache(transcriptPath, state, data) {
             transcriptState: state,
             data: serializeTranscriptData(data),
         };
-        fs.writeFileSync(cachePath, JSON.stringify(payload), 'utf8');
+        fs.writeFileSync(cachePath, JSON.stringify(payload), "utf8");
     }
     catch {
         // Cache failures are non-fatal; fall back to fresh parsing next time.
@@ -114,6 +130,7 @@ export async function parseTranscript(transcriptPath) {
         tools: [],
         agents: [],
         todos: [],
+        toolCounts: {},
     };
     if (!transcriptPath || !fs.existsSync(transcriptPath)) {
         return result;
@@ -150,14 +167,15 @@ export async function parseTranscript(transcriptPath) {
                 continue;
             try {
                 const entry = JSON.parse(line);
-                if (entry.type === 'custom-title' && typeof entry.customTitle === 'string') {
+                if (entry.type === "custom-title" &&
+                    typeof entry.customTitle === "string") {
                     customTitle = entry.customTitle;
                 }
-                else if (typeof entry.slug === 'string') {
+                else if (typeof entry.slug === "string") {
                     latestSlug = entry.slug;
                 }
                 // Accumulate token usage from assistant messages
-                if (entry.type === 'assistant' && entry.message?.usage) {
+                if (entry.type === "assistant" && entry.message?.usage) {
                     const usage = entry.message.usage;
                     sessionTokens.inputTokens += normalizeTokenCount(usage.input_tokens);
                     sessionTokens.outputTokens += normalizeTokenCount(usage.output_tokens);
@@ -197,27 +215,32 @@ function processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, resu
     if (!content || !Array.isArray(content))
         return;
     for (const block of content) {
-        if (block.type === 'tool_use' && block.id && block.name) {
+        if (block.type === "tool_use" && block.id && block.name) {
+            // Independent full-session tally (unaffected by later slice(-20)).
+            // Must run before any branch that routes to toolMap/agentMap.
+            result.toolCounts[block.name] = (result.toolCounts[block.name] ?? 0) + 1;
             const toolEntry = {
                 id: block.id,
                 name: block.name,
                 target: extractTarget(block.name, block.input),
-                status: 'running',
+                status: "running",
                 startTime: timestamp,
             };
-            if (block.name === 'Task' || block.name === 'Agent') {
+            if (block.name === "Task" || block.name === "Agent") {
                 const input = block.input;
                 const agentEntry = {
                     id: block.id,
-                    type: input?.subagent_type ?? input?.name ?? 'agent',
+                    type: input?.subagent_type ??
+                        input?.name ??
+                        "agent",
                     model: input?.model ?? undefined,
                     description: input?.description ?? undefined,
-                    status: 'running',
+                    status: "running",
                     startTime: timestamp,
                 };
                 agentMap.set(block.id, agentEntry);
             }
-            else if (block.name === 'TodoWrite') {
+            else if (block.name === "TodoWrite") {
                 const input = block.input;
                 if (input?.todos && Array.isArray(input.todos)) {
                     // Build reverse map: content → taskIds from existing state
@@ -245,22 +268,22 @@ function processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, resu
                     }
                 }
             }
-            else if (block.name === 'TaskCreate') {
+            else if (block.name === "TaskCreate") {
                 const input = block.input;
-                const subject = typeof input?.subject === 'string' ? input.subject : '';
-                const description = typeof input?.description === 'string' ? input.description : '';
-                const content = subject || description || 'Untitled task';
-                const status = normalizeTaskStatus(input?.status) ?? 'pending';
+                const subject = typeof input?.subject === "string" ? input.subject : "";
+                const description = typeof input?.description === "string" ? input.description : "";
+                const content = subject || description || "Untitled task";
+                const status = normalizeTaskStatus(input?.status) ?? "pending";
                 latestTodos.push({ content, status });
                 const rawTaskId = input?.taskId;
-                const taskId = typeof rawTaskId === 'string' || typeof rawTaskId === 'number'
+                const taskId = typeof rawTaskId === "string" || typeof rawTaskId === "number"
                     ? String(rawTaskId)
                     : block.id;
                 if (taskId) {
                     taskIdToIndex.set(taskId, latestTodos.length - 1);
                 }
             }
-            else if (block.name === 'TaskUpdate') {
+            else if (block.name === "TaskUpdate") {
                 const input = block.input;
                 const index = resolveTaskIndex(input?.taskId, taskIdToIndex, latestTodos);
                 if (index !== null) {
@@ -268,8 +291,8 @@ function processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, resu
                     if (status) {
                         latestTodos[index].status = status;
                     }
-                    const subject = typeof input?.subject === 'string' ? input.subject : '';
-                    const description = typeof input?.description === 'string' ? input.description : '';
+                    const subject = typeof input?.subject === "string" ? input.subject : "";
+                    const description = typeof input?.description === "string" ? input.description : "";
                     const content = subject || description;
                     if (content) {
                         latestTodos[index].content = content;
@@ -280,15 +303,15 @@ function processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, resu
                 toolMap.set(block.id, toolEntry);
             }
         }
-        if (block.type === 'tool_result' && block.tool_use_id) {
+        if (block.type === "tool_result" && block.tool_use_id) {
             const tool = toolMap.get(block.tool_use_id);
             if (tool) {
-                tool.status = block.is_error ? 'error' : 'completed';
+                tool.status = block.is_error ? "error" : "completed";
                 tool.endTime = timestamp;
             }
             const agent = agentMap.get(block.tool_use_id);
             if (agent) {
-                agent.status = 'completed';
+                agent.status = "completed";
                 agent.endTime = timestamp;
             }
         }
@@ -298,25 +321,25 @@ function extractTarget(toolName, input) {
     if (!input)
         return undefined;
     switch (toolName) {
-        case 'Read':
-        case 'Write':
-        case 'Edit':
+        case "Read":
+        case "Write":
+        case "Edit":
             return input.file_path ?? input.path;
-        case 'Glob':
+        case "Glob":
             return input.pattern;
-        case 'Grep':
+        case "Grep":
             return input.pattern;
-        case 'Bash':
+        case "Bash":
             const cmd = input.command;
-            return cmd?.slice(0, 30) + (cmd?.length > 30 ? '...' : '');
+            return cmd?.slice(0, 30) + (cmd?.length > 30 ? "..." : "");
     }
     return undefined;
 }
 function resolveTaskIndex(taskId, taskIdToIndex, latestTodos) {
-    if (typeof taskId === 'string' || typeof taskId === 'number') {
+    if (typeof taskId === "string" || typeof taskId === "number") {
         const key = String(taskId);
         const mapped = taskIdToIndex.get(key);
-        if (typeof mapped === 'number') {
+        if (typeof mapped === "number") {
             return mapped;
         }
         if (/^\d+$/.test(key)) {
@@ -329,19 +352,19 @@ function resolveTaskIndex(taskId, taskIdToIndex, latestTodos) {
     return null;
 }
 function normalizeTaskStatus(status) {
-    if (typeof status !== 'string')
+    if (typeof status !== "string")
         return null;
     switch (status) {
-        case 'pending':
-        case 'not_started':
-            return 'pending';
-        case 'in_progress':
-        case 'running':
-            return 'in_progress';
-        case 'completed':
-        case 'complete':
-        case 'done':
-            return 'completed';
+        case "pending":
+        case "not_started":
+            return "pending";
+        case "in_progress":
+        case "running":
+            return "in_progress";
+        case "completed":
+        case "complete":
+        case "done":
+            return "completed";
         default:
             return null;
     }

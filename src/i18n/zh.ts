@@ -51,19 +51,28 @@ export const zh: Messages = {
   harnessRecentAgent: "\u5B50\u4EE3\u7406",
   harnessRecentGuard: "\u5B88\u62A4",
   harnessRecentEvent: "\u4E8B\u4EF6",
-  "harnessReason.cbmAwaitingMcpUsage": "\u5F53\u524D\u4F1A\u8BDD\u8FD8\u6CA1\u4F7F\u7528 codebase-memory-mcp",
-  "harnessReason.cbmHint": "\u8BF7\u5148\u7528 search_graph/trace_path/get_code_snippet",
+  "harnessReason.cbmAwaitingMcpUsage":
+    "\u5F53\u524D\u4F1A\u8BDD\u8FD8\u6CA1\u4F7F\u7528 codebase-memory-mcp",
+  "harnessReason.cbmHint":
+    "\u8BF7\u5148\u7528 search_graph/trace_path/get_code_snippet",
   "harnessReason.testsRunning": "\u6B63\u5728\u8FD0\u884C\u6D4B\u8BD5",
   "harnessReason.testsFailed": "\u6D4B\u8BD5\u672A\u901A\u8FC7",
   "harnessReason.testsTimedOut": "\u6D4B\u8BD5\u8D85\u65F6",
-  "harnessReason.phraseDetected": "\u68C0\u6D4B\u5230\u505C\u6B62\u77ED\u8BED\u8FDD\u89C4",
-  "harnessReason.safetyRecursiveDelete": "\u5DF2\u963B\u6B62\u5371\u9669\u7684\u6839\u76EE\u5F55\u5220\u9664",
-  "harnessReason.safetyForcePushMain": "\u5DF2\u963B\u6B62\u5F3A\u63A8\u4E3B\u5206\u652F",
+  "harnessReason.phraseDetected":
+    "\u68C0\u6D4B\u5230\u505C\u6B62\u77ED\u8BED\u8FDD\u89C4",
+  "harnessReason.safetyRecursiveDelete":
+    "\u5DF2\u963B\u6B62\u5371\u9669\u7684\u6839\u76EE\u5F55\u5220\u9664",
+  "harnessReason.safetyForcePushMain":
+    "\u5DF2\u963B\u6B62\u5F3A\u63A8\u4E3B\u5206\u652F",
   "harnessReason.safetyHardReset": "\u5DF2\u963B\u6B62 git reset --hard",
-  "harnessReason.safetyGitClean": "\u5DF2\u963B\u6B62\u7834\u574F\u6027 git clean",
-  "harnessReason.safetyDatabaseDestructive": "\u5DF2\u963B\u6B62\u7834\u574F\u6027\u6570\u636E\u5E93\u547D\u4EE4",
-  "harnessReason.linterConfigProtected": "\u4E0D\u5141\u8BB8\u4FEE\u6539 lint/format \u914D\u7F6E\u6587\u4EF6",
-  "harnessReason.linterContentProtected": "\u4E0D\u5141\u8BB8\u4FEE\u6539 lint \u914D\u7F6E\u6BB5",
+  "harnessReason.safetyGitClean":
+    "\u5DF2\u963B\u6B62\u7834\u574F\u6027 git clean",
+  "harnessReason.safetyDatabaseDestructive":
+    "\u5DF2\u963B\u6B62\u7834\u574F\u6027\u6570\u636E\u5E93\u547D\u4EE4",
+  "harnessReason.linterConfigProtected":
+    "\u4E0D\u5141\u8BB8\u4FEE\u6539 lint/format \u914D\u7F6E\u6587\u4EF6",
+  "harnessReason.linterContentProtected":
+    "\u4E0D\u5141\u8BB8\u4FEE\u6539 lint \u914D\u7F6E\u6BB5",
   "harnessComponent.agent-opus": "Opus",
   "harnessComponent.research-first": "\u7814\u7A76",
   "harnessComponent.effort-max": "\u52AA\u529B",
@@ -76,6 +85,40 @@ export const zh: Messages = {
   "harnessComponent.read-tracker": "\u8BFB\u53D6",
   "harnessComponent.teammate-idle": "\u7A7A\u95F2",
   "harnessComponent.task-completed": "\u4EFB\u52A1",
+  "harnessComponent.edit-quality": "\u7F16\u8F91\u8D28\u91CF",
+  "harnessComponent.grep-tracker": "Grep\u8FFD\u8E2A",
+  "harnessComponent.prompt-rescuer": "\u63D0\u793A\u6551\u63F4",
+  "harnessComponent.session-summary": "\u4F1A\u8BDD\u6458\u8981",
+
+  // Harness Phase 2: R/E ratio
+  harnessReadEdit: "R/E",
+  harnessReadLabel: "\u8BFB",
+  harnessEditLabel: "\u6539",
+  harnessWriteLabel: "\u5199",
+
+  // Harness Phase 2: violation categories
+  "harnessViolationCategory.ownership-deflection": "\u9003\u907F",
+  "harnessViolationCategory.permission-seeking": "\u5F81\u8BE2",
+  "harnessViolationCategory.premature-stop": "\u8FC7\u65E9\u505C",
+  "harnessViolationCategory.known-limitation-excuse": "\u501F\u53E3",
+  "harnessViolationCategory.session-excuse": "\u4F1A\u8BDD\u6258\u8F9E",
+
+  // Harness Phase 2: baseline
+  harnessBaseline: "\u57FA\u7EBF",
+  harnessBaselineDeviation: "\u5F53\u524D\u504F\u79BB",
+  harnessBaselineSessions: "\u4F1A\u8BDD",
+  harnessBaselineCollecting: "\u6536\u96C6\u4E2D",
+
+  // Harness Phase 2: reasons
+  "harnessReason.editQuality.r1":
+    "\u6A21\u5F0F\u8FC7\u77ED\u6613\u8BEF\u5339\u914D",
+  "harnessReason.editQuality.r2":
+    "\u672A Grep \u524D\u4E0D\u53EF\u5168\u5C40\u66FF\u6362",
+  "harnessReason.editQuality.r3": "Write \u524D\u5FC5\u987B\u5148 Read",
+  "harnessReason.promptRescuer.t1": "\u632B\u8D25\u5FAA\u73AF\u68C0\u6D4B",
+  "harnessReason.promptRescuer.t2":
+    "\u590D\u6742\u591A\u6B65\u9AA4\u4EFB\u52A1",
+  "harnessReason.promptRescuer.t3": "\u660E\u663E\u56DE\u6EAF",
 
   // Init
   "init.initializing": "[claude-hud] \u6B63\u5728\u521D\u59CB\u5316...",

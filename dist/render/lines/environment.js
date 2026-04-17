@@ -251,9 +251,15 @@ function isAfterSession(lineTime, sessionStartMs) {
     const ts = new Date(lineTime).getTime();
     return !isNaN(ts) && ts >= sessionStartMs;
 }
+function getLocalDateStamp(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
 function getHookStats(session) {
     const logDir = path.join(os.homedir(), ".claude", "logs");
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalDateStamp(new Date());
     const hookMap = new Map();
     const violationMap = new Map();
     let totalTriggers = 0;

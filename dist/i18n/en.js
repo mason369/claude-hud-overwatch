@@ -71,6 +71,33 @@ export const en = {
     "harnessComponent.read-tracker": "Read",
     "harnessComponent.teammate-idle": "Idle",
     "harnessComponent.task-completed": "Task",
+    "harnessComponent.edit-quality": "EditQual",
+    "harnessComponent.grep-tracker": "GrepTrk",
+    "harnessComponent.prompt-rescuer": "Rescuer",
+    "harnessComponent.session-summary": "Summary",
+    // Harness Phase 2: R/E ratio
+    harnessReadEdit: "R/E",
+    harnessReadLabel: "Read",
+    harnessEditLabel: "Edit",
+    harnessWriteLabel: "Write",
+    // Harness Phase 2: violation categories
+    "harnessViolationCategory.ownership-deflection": "deflect",
+    "harnessViolationCategory.permission-seeking": "permit",
+    "harnessViolationCategory.premature-stop": "earlyStop",
+    "harnessViolationCategory.known-limitation-excuse": "excuse",
+    "harnessViolationCategory.session-excuse": "session",
+    // Harness Phase 2: baseline
+    harnessBaseline: "Baseline",
+    harnessBaselineDeviation: "deviation",
+    harnessBaselineSessions: "sessions",
+    harnessBaselineCollecting: "collecting",
+    // Harness Phase 2: reasons
+    "harnessReason.editQuality.r1": "pattern too short risks mismatch",
+    "harnessReason.editQuality.r2": "cannot replace_all without a prior Grep",
+    "harnessReason.editQuality.r3": "must Read before Write",
+    "harnessReason.promptRescuer.t1": "frustration loop detected",
+    "harnessReason.promptRescuer.t2": "complex multi-step task",
+    "harnessReason.promptRescuer.t3": "explicit rollback",
     // Init
     "init.initializing": "[claude-hud] Initializing...",
     "init.macosNote": "[claude-hud] Note: On macOS, you may need to restart Claude Code for the HUD to appear.",

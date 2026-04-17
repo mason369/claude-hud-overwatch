@@ -6,9 +6,12 @@ import type {
   HarnessHealth,
   HarnessComponentState,
   HarnessRecentEvent,
+  HarnessReadEditRatio,
+  HarnessBaseline,
   ComponentStatus,
   HealthTrend,
   StdinData,
+  TranscriptData,
 } from "../../types.js";
 import type { HudConfig } from "../../config.js";
 import { dim, green, red, yellow } from "../colors.js";
@@ -36,24 +39,149 @@ interface HarnessComponentDef {
 }
 
 const HARNESS_COMPONENTS: HarnessComponentDef[] = [
-  { id: "agent-opus", name: "Agent Opus", type: "guard", priority: "normal", weight: 1, scripts: ["agent-opus-enforcer.sh"] },
-  { id: "research-first", name: "Research First", type: "guard", priority: "high", weight: 2, scripts: ["research-first-guard.sh"] },
-  { id: "effort-max", name: "Effort Max", type: "guard", priority: "normal", weight: 1, scripts: ["effort-max-enforcer.sh"] },
-  { id: "safety-gate", name: "Safety Gate", type: "guard", priority: "critical", weight: 3, scripts: ["safety-gate.sh"] },
-  { id: "linter-protection", name: "Linter Protection", type: "guard", priority: "high", weight: 2, scripts: ["linter-config-protection.sh"] },
-  { id: "cbm-gate", name: "CBM Gate", type: "guard", priority: "normal", weight: 1, scripts: ["cbm-code-discovery-gate"] },
-  { id: "auto-format", name: "Auto Format", type: "sensor", priority: "normal", weight: 1, scripts: ["auto-format.sh"] },
-  { id: "completion-gate", name: "Completion Gate", type: "sensor", priority: "critical", weight: 3, scripts: ["completion-gate.sh"] },
-  { id: "stop-phrase-guard", name: "Stop Phrase", type: "sensor", priority: "high", weight: 2, scripts: ["stop-phrase-guard.sh"] },
-  { id: "read-tracker", name: "Read Tracker", type: "sensor", priority: "normal", weight: 1, scripts: ["read-tracker.sh"] },
-  { id: "teammate-idle", name: "Teammate Idle", type: "sensor", priority: "normal", weight: 1, scripts: ["teammate-idle-gate.sh"] },
-  { id: "task-completed", name: "Task Completed", type: "sensor", priority: "normal", weight: 1, scripts: ["task-completed-gate.sh"] },
+  {
+    id: "agent-opus",
+    name: "Agent Opus",
+    type: "guard",
+    priority: "normal",
+    weight: 1,
+    scripts: ["agent-opus-enforcer.sh"],
+  },
+  {
+    id: "research-first",
+    name: "Research First",
+    type: "guard",
+    priority: "high",
+    weight: 2,
+    scripts: ["research-first-guard.sh"],
+  },
+  {
+    id: "effort-max",
+    name: "Effort Max",
+    type: "guard",
+    priority: "normal",
+    weight: 1,
+    scripts: ["effort-max-enforcer.sh"],
+  },
+  {
+    id: "safety-gate",
+    name: "Safety Gate",
+    type: "guard",
+    priority: "critical",
+    weight: 3,
+    scripts: ["safety-gate.sh"],
+  },
+  {
+    id: "linter-protection",
+    name: "Linter Protection",
+    type: "guard",
+    priority: "high",
+    weight: 2,
+    scripts: ["linter-config-protection.sh"],
+  },
+  {
+    id: "cbm-gate",
+    name: "CBM Gate",
+    type: "guard",
+    priority: "normal",
+    weight: 1,
+    scripts: ["cbm-code-discovery-gate"],
+  },
+  {
+    id: "auto-format",
+    name: "Auto Format",
+    type: "sensor",
+    priority: "normal",
+    weight: 1,
+    scripts: ["auto-format.sh"],
+  },
+  {
+    id: "completion-gate",
+    name: "Completion Gate",
+    type: "sensor",
+    priority: "critical",
+    weight: 3,
+    scripts: ["completion-gate.sh"],
+  },
+  {
+    id: "stop-phrase-guard",
+    name: "Stop Phrase",
+    type: "sensor",
+    priority: "high",
+    weight: 2,
+    scripts: ["stop-phrase-guard.sh"],
+  },
+  {
+    id: "read-tracker",
+    name: "Read Tracker",
+    type: "sensor",
+    priority: "normal",
+    weight: 1,
+    scripts: ["read-tracker.sh"],
+  },
+  {
+    id: "teammate-idle",
+    name: "Teammate Idle",
+    type: "sensor",
+    priority: "normal",
+    weight: 1,
+    scripts: ["teammate-idle-gate.sh"],
+  },
+  {
+    id: "task-completed",
+    name: "Task Completed",
+    type: "sensor",
+    priority: "normal",
+    weight: 1,
+    scripts: ["task-completed-gate.sh"],
+  },
+  {
+    id: "edit-quality",
+    name: "Edit Quality",
+    type: "guard",
+    priority: "high",
+    weight: 2,
+    scripts: ["edit-quality-guard.sh"],
+  },
+  {
+    id: "grep-tracker",
+    name: "Grep Tracker",
+    type: "sensor",
+    priority: "normal",
+    weight: 1,
+    scripts: ["grep-tracker.sh"],
+  },
+  {
+    id: "prompt-rescuer",
+    name: "Prompt Rescuer",
+    type: "sensor",
+    priority: "high",
+    weight: 2,
+    scripts: ["prompt-rescuer.sh"],
+  },
+  {
+    id: "session-summary",
+    name: "Session Summary",
+    type: "sensor",
+    priority: "normal",
+    weight: 1,
+    scripts: ["session-summary.sh"],
+  },
 ];
 
-const TOTAL_WEIGHT = HARNESS_COMPONENTS.reduce((sum, component) => sum + component.weight, 0);
-const COMPONENT_BY_ID = new Map(HARNESS_COMPONENTS.map(component => [component.id, component]));
+const TOTAL_WEIGHT = HARNESS_COMPONENTS.reduce(
+  (sum, component) => sum + component.weight,
+  0,
+);
+const COMPONENT_BY_ID = new Map(
+  HARNESS_COMPONENTS.map((component) => [component.id, component]),
+);
 const SCRIPT_TO_COMPONENT_ID = new Map(
-  HARNESS_COMPONENTS.flatMap(component => component.scripts.map(script => [script.toLowerCase(), component.id] as const)),
+  HARNESS_COMPONENTS.flatMap((component) =>
+    component.scripts.map(
+      (script) => [script.toLowerCase(), component.id] as const,
+    ),
+  ),
 );
 
 const COMPONENT_LABEL_KEY_BY_ID = {
@@ -69,10 +197,17 @@ const COMPONENT_LABEL_KEY_BY_ID = {
   "read-tracker": "harnessComponent.read-tracker",
   "teammate-idle": "harnessComponent.teammate-idle",
   "task-completed": "harnessComponent.task-completed",
+  "edit-quality": "harnessComponent.edit-quality",
+  "grep-tracker": "harnessComponent.grep-tracker",
+  "prompt-rescuer": "harnessComponent.prompt-rescuer",
+  "session-summary": "harnessComponent.session-summary",
 } as const;
 
 function getComponentLabel(componentId: string, fallback: string): string {
-  const key = COMPONENT_LABEL_KEY_BY_ID[componentId as keyof typeof COMPONENT_LABEL_KEY_BY_ID];
+  const key =
+    COMPONENT_LABEL_KEY_BY_ID[
+      componentId as keyof typeof COMPONENT_LABEL_KEY_BY_ID
+    ];
   return key ? t(key) : fallback;
 }
 
@@ -130,7 +265,11 @@ function normalizeSessionId(sessionId?: string): string | undefined {
 function parseHarnessEventLine(line: string): HarnessEvent | null {
   try {
     const parsed = JSON.parse(line) as Partial<HarnessEvent>;
-    if (typeof parsed.ts !== "string" || typeof parsed.event !== "string" || typeof parsed.source !== "string") {
+    if (
+      typeof parsed.ts !== "string" ||
+      typeof parsed.event !== "string" ||
+      typeof parsed.source !== "string"
+    ) {
       return null;
     }
 
@@ -139,10 +278,13 @@ function parseHarnessEventLine(line: string): HarnessEvent | null {
       event: parsed.event,
       source: parsed.source,
       session: typeof parsed.session === "string" ? parsed.session : undefined,
-      transcript: typeof parsed.transcript === "string" ? parsed.transcript : undefined,
-      category: typeof parsed.category === "string" ? parsed.category : undefined,
+      transcript:
+        typeof parsed.transcript === "string" ? parsed.transcript : undefined,
+      category:
+        typeof parsed.category === "string" ? parsed.category : undefined,
       detail: typeof parsed.detail === "string" ? parsed.detail : undefined,
-      severity: typeof parsed.severity === "string" ? parsed.severity : undefined,
+      severity:
+        typeof parsed.severity === "string" ? parsed.severity : undefined,
     };
   } catch {
     return null;
@@ -156,17 +298,18 @@ function readHarnessEvents(): HarnessEvent[] {
   try {
     const stat = fs.statSync(eventsFile);
     if (
-      parsedEventsCache
-      && parsedEventsCache.filePath === eventsFile
-      && parsedEventsCache.mtimeMs === stat.mtimeMs
-      && parsedEventsCache.size === stat.size
+      parsedEventsCache &&
+      parsedEventsCache.filePath === eventsFile &&
+      parsedEventsCache.mtimeMs === stat.mtimeMs &&
+      parsedEventsCache.size === stat.size
     ) {
       return parsedEventsCache.events;
     }
 
-    const events = fs.readFileSync(eventsFile, "utf8")
+    const events = fs
+      .readFileSync(eventsFile, "utf8")
       .split("\n")
-      .map(line => line.trim())
+      .map((line) => line.trim())
       .filter(Boolean)
       .map(parseHarnessEventLine)
       .filter((event): event is HarnessEvent => event !== null);
@@ -193,24 +336,38 @@ function eventBelongsToCurrentSession(
     return true;
   }
 
-  if (normalizeSessionId(event.session) || normalizeTranscriptPath(event.transcript)) {
+  if (
+    normalizeSessionId(event.session) ||
+    normalizeTranscriptPath(event.transcript)
+  ) {
     return false;
   }
 
   return latestBoundaryMatchesCurrentSession;
 }
 
-function parseHarnessEvents(sessionId?: string, transcriptPath?: string): HarnessEvent[] {
+function parseHarnessEvents(
+  sessionId?: string,
+  transcriptPath?: string,
+): HarnessEvent[] {
   const ctx: SessionContext = { sessionId, transcriptPath };
   const events = readHarnessEvents();
   let latestBoundaryMatchesCurrentSession = false;
 
-  return events.filter(event => {
+  return events.filter((event) => {
     if (event.event === "lifecycle" && event.source === "session-init") {
-      latestBoundaryMatchesCurrentSession = matchesSession(event.session, event.transcript, ctx);
+      latestBoundaryMatchesCurrentSession = matchesSession(
+        event.session,
+        event.transcript,
+        ctx,
+      );
     }
 
-    return eventBelongsToCurrentSession(event, ctx, latestBoundaryMatchesCurrentSession);
+    return eventBelongsToCurrentSession(
+      event,
+      ctx,
+      latestBoundaryMatchesCurrentSession,
+    );
   });
 }
 
@@ -223,13 +380,19 @@ function isBlockEvent(event: HarnessEvent): boolean {
 }
 
 function contributesToStability(event: HarnessEvent): boolean {
-  return event.event === "guard.pass"
-    || event.event === "guard.block"
-    || event.event === "sensor.trigger";
+  return (
+    event.event === "guard.pass" ||
+    event.event === "guard.block" ||
+    event.event === "sensor.trigger"
+  );
 }
 
 function isRecentNotableEvent(event: HarnessEvent): boolean {
-  if (isViolationEvent(event) || isBlockEvent(event) || event.event === "config.repair") {
+  if (
+    isViolationEvent(event) ||
+    isBlockEvent(event) ||
+    event.event === "config.repair"
+  ) {
     return true;
   }
 
@@ -255,7 +418,9 @@ function getRecentNotableEvents(events: HarnessEvent[]): HarnessRecentEvent[] {
   const seenSources = new Set<string>();
   const recentEvents: HarnessRecentEvent[] = [];
 
-  for (const event of [...events].sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))) {
+  for (const event of [...events].sort(
+    (a, b) => Date.parse(b.ts) - Date.parse(a.ts),
+  )) {
     if (seenSources.has(event.source)) {
       continue;
     }
@@ -345,7 +510,10 @@ function collectSettingsPaths(cwd?: string): string[] {
 
   if (cwd) {
     const projectClaudeDir = path.join(cwd, ".claude");
-    const overlapsUserScope = pathsReferToSameLocation(projectClaudeDir, claudeDir);
+    const overlapsUserScope = pathsReferToSameLocation(
+      projectClaudeDir,
+      claudeDir,
+    );
     if (!overlapsUserScope) {
       settingsPaths.push(path.join(projectClaudeDir, "settings.json"));
     }
@@ -364,7 +532,9 @@ function detectInstalledComponents(cwd?: string): Set<string> {
         continue;
       }
 
-      const parsed = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as unknown;
+      const parsed = JSON.parse(
+        fs.readFileSync(settingsPath, "utf8"),
+      ) as unknown;
       for (const command of extractHookCommands(parsed)) {
         const componentId = resolveComponentIdFromCommand(command);
         if (componentId) {
@@ -397,11 +567,18 @@ export function calculateHealth(input: HealthInput): number {
   }
 
   const baseScore = (installedWeight / TOTAL_WEIGHT) * 60;
-  const activeScore = installedIds.size > 0 ? (activeIds.size / installedIds.size) * 20 : 0;
+  const activeScore =
+    installedIds.size > 0 ? (activeIds.size / installedIds.size) * 20 : 0;
   const stabilityScore = Math.min(nonViolationCount / 10, 1) * 20;
   const violationPenalty = Math.min(violationCount * 5, 20);
 
-  return Math.max(0, Math.min(100, Math.round(baseScore + activeScore + stabilityScore - violationPenalty)));
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(baseScore + activeScore + stabilityScore - violationPenalty),
+    ),
+  );
 }
 
 function calculateTrend(events: HarnessEvent[]): HealthTrend {
@@ -412,10 +589,16 @@ function calculateTrend(events: HarnessEvent[]): HealthTrend {
   const midpoint = Math.floor(events.length / 2);
   const firstHalf = events.slice(0, midpoint);
   const secondHalf = events.slice(midpoint);
-  const firstBlocks = firstHalf.filter(event => event.event.endsWith(".block")).length;
-  const secondBlocks = secondHalf.filter(event => event.event.endsWith(".block")).length;
-  const firstDensity = firstHalf.length > 0 ? firstBlocks / firstHalf.length : 0;
-  const secondDensity = secondHalf.length > 0 ? secondBlocks / secondHalf.length : 0;
+  const firstBlocks = firstHalf.filter((event) =>
+    event.event.endsWith(".block"),
+  ).length;
+  const secondBlocks = secondHalf.filter((event) =>
+    event.event.endsWith(".block"),
+  ).length;
+  const firstDensity =
+    firstHalf.length > 0 ? firstBlocks / firstHalf.length : 0;
+  const secondDensity =
+    secondHalf.length > 0 ? secondBlocks / secondHalf.length : 0;
 
   if (secondDensity < firstDensity - 0.1) {
     return "up";
@@ -428,7 +611,10 @@ function calculateTrend(events: HarnessEvent[]): HealthTrend {
   return "stable";
 }
 
-function getHarnessThresholds(config: HudConfig): { warning: number; critical: number } {
+function getHarnessThresholds(config: HudConfig): {
+  warning: number;
+  critical: number;
+} {
   const warning = config.harness?.scoreThresholds?.warning ?? 70;
   const critical = config.harness?.scoreThresholds?.critical ?? 50;
   return {
@@ -437,7 +623,11 @@ function getHarnessThresholds(config: HudConfig): { warning: number; critical: n
   };
 }
 
-function scoreBar(score: number, thresholds: { warning: number; critical: number }, width = 10): string {
+function scoreBar(
+  score: number,
+  thresholds: { warning: number; critical: number },
+  width = 10,
+): string {
   const safeScore = Math.max(0, Math.min(100, score));
   const filled = Math.round((safeScore / 100) * width);
   const empty = width - filled;
@@ -455,7 +645,11 @@ function scoreBar(score: number, thresholds: { warning: number; critical: number
   return red(filledStr) + dim(emptyStr);
 }
 
-function scoreColor(text: string, score: number, thresholds: { warning: number; critical: number }): string {
+function scoreColor(
+  text: string,
+  score: number,
+  thresholds: { warning: number; critical: number },
+): string {
   if (score >= thresholds.warning) {
     return green(text);
   }
@@ -469,7 +663,9 @@ function scoreColor(text: string, score: number, thresholds: { warning: number; 
 
 function formatRecentEventTime(ts: string): string {
   const parsed = Date.parse(ts);
-  return Number.isNaN(parsed) ? "--:--" : new Date(parsed).toISOString().slice(11, 16);
+  return Number.isNaN(parsed)
+    ? "--:--"
+    : new Date(parsed).toISOString().slice(11, 16);
 }
 
 function trimEventDetail(event: HarnessRecentEvent): string {
@@ -479,13 +675,19 @@ function trimEventDetail(event: HarnessRecentEvent): string {
 function formatRecentEventDetail(event: HarnessRecentEvent): string {
   const detail = trimEventDetail(event);
 
-  if (event.source === "cbm-gate" && (event.category === "awaiting_mcp_usage" || event.category === "first_use_redirect")) {
+  if (
+    event.source === "cbm-gate" &&
+    (event.category === "awaiting_mcp_usage" ||
+      event.category === "first_use_redirect")
+  ) {
     return `${t("harnessReason.cbmAwaitingMcpUsage")}；${t("harnessReason.cbmHint")}`;
   }
 
   if (event.source === "completion-gate") {
     if (event.category === "tests_running") {
-      return detail ? `${t("harnessReason.testsRunning")}: ${detail}` : t("harnessReason.testsRunning");
+      return detail
+        ? `${t("harnessReason.testsRunning")}: ${detail}`
+        : t("harnessReason.testsRunning");
     }
     if (detail && (/\bexit 124\b/i.test(detail) || /timed out/i.test(detail))) {
       return `${t("harnessReason.testsTimedOut")}: ${detail}`;
@@ -498,33 +700,52 @@ function formatRecentEventDetail(event: HarnessRecentEvent): string {
 
   if (event.source === "safety-gate") {
     if (event.category === "recursive_delete") {
-      return detail ? `${t("harnessReason.safetyRecursiveDelete")}: ${detail}` : t("harnessReason.safetyRecursiveDelete");
+      return detail
+        ? `${t("harnessReason.safetyRecursiveDelete")}: ${detail}`
+        : t("harnessReason.safetyRecursiveDelete");
     }
     if (event.category === "force_push_main") {
-      return detail ? `${t("harnessReason.safetyForcePushMain")}: ${detail}` : t("harnessReason.safetyForcePushMain");
+      return detail
+        ? `${t("harnessReason.safetyForcePushMain")}: ${detail}`
+        : t("harnessReason.safetyForcePushMain");
     }
     if (event.category === "hard_reset") {
-      return detail ? `${t("harnessReason.safetyHardReset")}: ${detail}` : t("harnessReason.safetyHardReset");
+      return detail
+        ? `${t("harnessReason.safetyHardReset")}: ${detail}`
+        : t("harnessReason.safetyHardReset");
     }
     if (event.category === "git_clean") {
-      return detail ? `${t("harnessReason.safetyGitClean")}: ${detail}` : t("harnessReason.safetyGitClean");
+      return detail
+        ? `${t("harnessReason.safetyGitClean")}: ${detail}`
+        : t("harnessReason.safetyGitClean");
     }
-    if (event.category === "database_destructive" || event.category === "sql_destructive") {
-      return detail ? `${t("harnessReason.safetyDatabaseDestructive")}: ${detail}` : t("harnessReason.safetyDatabaseDestructive");
+    if (
+      event.category === "database_destructive" ||
+      event.category === "sql_destructive"
+    ) {
+      return detail
+        ? `${t("harnessReason.safetyDatabaseDestructive")}: ${detail}`
+        : t("harnessReason.safetyDatabaseDestructive");
     }
   }
 
   if (event.source === "linter-protection") {
     if (event.category === "full_file_block") {
-      return detail ? `${t("harnessReason.linterConfigProtected")}: ${detail}` : t("harnessReason.linterConfigProtected");
+      return detail
+        ? `${t("harnessReason.linterConfigProtected")}: ${detail}`
+        : t("harnessReason.linterConfigProtected");
     }
     if (event.category === "content_aware_block") {
-      return detail ? `${t("harnessReason.linterContentProtected")}: ${detail}` : t("harnessReason.linterContentProtected");
+      return detail
+        ? `${t("harnessReason.linterContentProtected")}: ${detail}`
+        : t("harnessReason.linterContentProtected");
     }
   }
 
   if (event.source === "stop-phrase-guard") {
-    return detail ? `${t("harnessReason.phraseDetected")}: ${detail}` : t("harnessReason.phraseDetected");
+    return detail
+      ? `${t("harnessReason.phraseDetected")}: ${detail}`
+      : t("harnessReason.phraseDetected");
   }
 
   return detail || event.category || event.source;
@@ -556,29 +777,244 @@ function getRecentEventLabel(event: HarnessRecentEvent): string {
   }
 
   const component = COMPONENT_BY_ID.get(event.source);
-  return component?.type === "guard" ? t("harnessRecentGuard") : t("harnessRecentEvent");
+  return component?.type === "guard"
+    ? t("harnessRecentGuard")
+    : t("harnessRecentEvent");
 }
 
 function renderRecentEventLine(event: HarnessRecentEvent): string {
   const timeLabel = formatRecentEventTime(event.ts);
   const component = COMPONENT_BY_ID.get(event.source);
-  const componentLabel = component ? getComponentLabel(component.id, component.name) : event.source;
+  const componentLabel = component
+    ? getComponentLabel(component.id, component.name)
+    : event.source;
   const detail = formatRecentEventDetail(event);
   const eventLabel = getRecentEventLabel(event);
 
   if (event.event === "violation") {
-    return red(`  \u21b3 ${eventLabel}[${timeLabel}] ${componentLabel} \u2192 ${detail}`);
+    return red(
+      `  \u21b3 ${eventLabel}[${timeLabel}] ${componentLabel} \u2192 ${detail}`,
+    );
   }
 
   if (event.event.endsWith(".block")) {
-    return yellow(`  \u21b3 ${eventLabel}[${timeLabel}] ${componentLabel} \u2192 ${detail}`);
+    return yellow(
+      `  \u21b3 ${eventLabel}[${timeLabel}] ${componentLabel} \u2192 ${detail}`,
+    );
   }
 
   if (event.source === "task-completed") {
     return dim(`  \u21b3 ${eventLabel}[${timeLabel}] ${detail}`);
   }
 
-  return dim(`  \u21b3 ${eventLabel}[${timeLabel}] ${componentLabel} \u2192 ${detail}`);
+  return dim(
+    `  \u21b3 ${eventLabel}[${timeLabel}] ${componentLabel} \u2192 ${detail}`,
+  );
+}
+
+export function computeReadEditRatio(
+  toolCounts: Record<string, number> | undefined,
+): HarnessReadEditRatio | null {
+  if (!toolCounts) return null;
+  const reads = toolCounts.Read ?? 0;
+  const edits = toolCounts.Edit ?? 0;
+  const writes = toolCounts.Write ?? 0;
+  if (reads + edits + writes === 0) return null;
+  const denom = Math.max(edits + writes, 1);
+  return { ratio: reads / denom, reads, edits, writes };
+}
+
+function computeViolationBreakdown(
+  events: HarnessEvent[],
+): Record<string, number> {
+  const breakdown: Record<string, number> = {};
+  for (const event of events) {
+    if (!isViolationEvent(event)) continue;
+    const category = event.category?.trim();
+    if (!category) continue;
+    breakdown[category] = (breakdown[category] ?? 0) + 1;
+  }
+  return breakdown;
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+  return sorted[middle];
+}
+
+export function loadBaseline(config: HudConfig): HarnessBaseline | null {
+  const baselineConfig = config.harness?.baseline;
+  if (baselineConfig?.enabled === false) return null;
+  const windowSize = baselineConfig?.windowSize ?? 30;
+  const minSessions = baselineConfig?.minSessions ?? 5;
+
+  const summaryPath = path.join(
+    os.homedir(),
+    ".claude",
+    "logs",
+    "session-summary.jsonl",
+  );
+
+  let content: string;
+  try {
+    content = fs.readFileSync(summaryPath, "utf-8");
+  } catch {
+    return null;
+  }
+
+  const lines = content.split("\n").filter((line) => line.trim().length > 0);
+  const recent = lines.slice(-windowSize);
+  const ratios: number[] = [];
+  for (const line of recent) {
+    try {
+      const parsed = JSON.parse(line) as { r_e_ratio?: unknown };
+      if (
+        typeof parsed.r_e_ratio === "number" &&
+        Number.isFinite(parsed.r_e_ratio)
+      ) {
+        ratios.push(parsed.r_e_ratio);
+      }
+    } catch {
+      // Ignore malformed lines.
+    }
+  }
+
+  if (ratios.length < minSessions) {
+    return {
+      rEMedian: null,
+      rEMad: null,
+      rEZScore: null,
+      sessionCount: ratios.length,
+    };
+  }
+
+  const med = median(ratios);
+  const mad = median(ratios.map((r) => Math.abs(r - med)));
+
+  return {
+    rEMedian: med,
+    rEMad: mad,
+    rEZScore: null,
+    sessionCount: ratios.length,
+  };
+}
+
+export function computeBaselineZScore(
+  current: number,
+  baseline: HarnessBaseline,
+): number | null {
+  if (baseline.rEMedian === null || baseline.rEMad === null) return null;
+  if (baseline.rEMad === 0) return null;
+  return (current - baseline.rEMedian) / (1.4826 * baseline.rEMad);
+}
+
+function renderReadEditLine(
+  ratio: HarnessReadEditRatio,
+  config: HudConfig,
+): string | null {
+  const ratioConfig = config.harness?.readEditRatio;
+  if (ratioConfig?.show === false) return null;
+
+  const warningThreshold = ratioConfig?.warning ?? 2.5;
+  const criticalThreshold = ratioConfig?.critical ?? 1.5;
+
+  const { ratio: value, reads, edits, writes } = ratio;
+  const ratioStr = value.toFixed(1);
+  const label = t("harnessReadEdit");
+  const readLabel = t("harnessReadLabel");
+  const editLabel = t("harnessEditLabel");
+  const writeLabel = t("harnessWriteLabel");
+  const body = `${label}: ${ratioStr} | ${readLabel}:${reads} ${editLabel}:${edits} ${writeLabel}:${writes}`;
+  const prefix = "\uD83D\uDCD0 ";
+
+  if (edits + writes === 0) {
+    return `  ${dim(prefix + body)}`;
+  }
+
+  if (value < criticalThreshold) {
+    return `  ${red(prefix + body)}`;
+  }
+
+  if (value < warningThreshold) {
+    return `  ${yellow(prefix + body)}`;
+  }
+
+  return `  ${green(prefix + body)}`;
+}
+
+function renderViolationBreakdownLine(
+  breakdown: Record<string, number>,
+  config: HudConfig,
+): string | null {
+  if (config.harness?.violationBreakdown?.show === false) return null;
+  const entries = Object.entries(breakdown).filter(([, count]) => count > 0);
+  if (entries.length === 0) return null;
+
+  const parts = entries.map(([category, count]) => {
+    const translationKey = `harnessViolationCategory.${category}`;
+    const translated = t(translationKey as any);
+    // `t()` returns the raw key when the translation is missing; in that case fall back to the category id.
+    const label = translated === translationKey ? category : translated;
+    return `${label}\u00D7${count}`;
+  });
+
+  const prefix = "\u26A0 ";
+  return `  ${red(prefix + t("harnessViolations") + ": " + parts.join(" "))}`;
+}
+
+function renderBaselineLine(
+  baseline: HarnessBaseline,
+  current: HarnessReadEditRatio | null,
+  config: HudConfig,
+): string | null {
+  const baselineConfig = config.harness?.baseline;
+  if (baselineConfig?.enabled === false) return null;
+
+  const minSessions = baselineConfig?.minSessions ?? 5;
+  const warnZ = baselineConfig?.warnZ ?? 1;
+  const criticalZ = baselineConfig?.criticalZ ?? 2;
+
+  if (baseline.sessionCount < minSessions) {
+    const collecting = t("harnessBaselineCollecting");
+    return `  ${dim(
+      `\uD83D\uDCCA ${t("harnessBaseline")}: ${collecting} (${baseline.sessionCount}/${minSessions})`,
+    )}`;
+  }
+
+  if (baseline.rEMedian === null) return null;
+
+  const medianStr = baseline.rEMedian.toFixed(1);
+  const sessions = baseline.sessionCount;
+  const base = `\uD83D\uDCCA ${t("harnessBaseline")}: ${t("harnessReadEdit")} ${medianStr} (${sessions}${t("harnessBaselineSessions")})`;
+
+  if (!current) {
+    return `  ${dim(base)}`;
+  }
+
+  const z = computeBaselineZScore(current.ratio, baseline);
+  if (z === null) {
+    return `  ${dim(base)}`;
+  }
+
+  const absZ = Math.abs(z);
+  const arrow = z < 0 ? "\u2193" : "\u2191";
+  const zStr = `${z >= 0 ? "+" : ""}${z.toFixed(1)}\u03C3`;
+  const deviation = `${t("harnessBaselineDeviation")}: ${zStr} ${arrow}`;
+  const full = `${base} | ${deviation}`;
+
+  if (absZ >= criticalZ) {
+    return `  ${red(full)}`;
+  }
+
+  if (absZ >= warnZ) {
+    return `  ${yellow(full)}`;
+  }
+
+  return `  ${dim(full)}`;
 }
 
 export function renderHarnessLines(ctx: RenderContext): string[] {
@@ -590,19 +1026,21 @@ export function renderHarnessLines(ctx: RenderContext): string[] {
   const health = ctx.harness;
   const lines: string[] = [];
   const thresholds = getHarnessThresholds(config);
-  const trendSymbol = health.trend === "up"
-    ? t("harnessTrendUp")
-    : health.trend === "down"
-      ? t("harnessTrendDown")
-      : t("harnessTrendStable");
+  const trendSymbol =
+    health.trend === "up"
+      ? t("harnessTrendUp")
+      : health.trend === "down"
+        ? t("harnessTrendDown")
+        : t("harnessTrendStable");
 
   const bar = scoreBar(health.score, thresholds);
   const scoreText = scoreColor(String(health.score), health.score, thresholds);
-  const trendText = health.trend === "up"
-    ? green(trendSymbol)
-    : health.trend === "down"
-      ? red(trendSymbol)
-      : dim(trendSymbol);
+  const trendText =
+    health.trend === "up"
+      ? green(trendSymbol)
+      : health.trend === "down"
+        ? red(trendSymbol)
+        : dim(trendSymbol);
   const summaryParts = [`${t("harnessGuardLabel")} ${t("harnessDashboard")}`];
   if (config.harness.showScore !== false) {
     summaryParts.push(bar, scoreText);
@@ -611,8 +1049,10 @@ export function renderHarnessLines(ctx: RenderContext): string[] {
   lines.push(summaryParts.join(" "));
 
   if (config.harness.showGuards) {
-    const guards = health.components.filter(component => component.type === "guard");
-    const guardParts = guards.map(component => {
+    const guards = health.components.filter(
+      (component) => component.type === "guard",
+    );
+    const guardParts = guards.map((component) => {
       const shortName = getComponentLabel(component.id, component.name);
       if (component.status === "missing") {
         return red(`\u2717${shortName}`);
@@ -629,8 +1069,10 @@ export function renderHarnessLines(ctx: RenderContext): string[] {
   }
 
   if (config.harness.showSensors) {
-    const sensors = health.components.filter(component => component.type === "sensor");
-    const sensorParts = sensors.map(component => {
+    const sensors = health.components.filter(
+      (component) => component.type === "sensor",
+    );
+    const sensorParts = sensors.map((component) => {
       const shortName = getComponentLabel(component.id, component.name);
       if (component.status === "missing") {
         return red(`\u2717${shortName}`);
@@ -647,20 +1089,46 @@ export function renderHarnessLines(ctx: RenderContext): string[] {
   }
 
   if (config.harness.showStats) {
-    const blockCount = health.components.reduce((sum, component) => sum + component.blockCount, 0);
+    const blockCount = health.components.reduce(
+      (sum, component) => sum + component.blockCount,
+      0,
+    );
     const guardEventCount = health.components
-      .filter(component => component.type === "guard")
+      .filter((component) => component.type === "guard")
       .reduce((sum, component) => sum + component.eventCount, 0);
     const sensorEventCount = health.components
-      .filter(component => component.type === "sensor")
+      .filter((component) => component.type === "sensor")
       .reduce((sum, component) => sum + component.eventCount, 0);
-    const violationText = health.totalViolations > 0
-      ? red(`${t("harnessViolations")}:${health.totalViolations}`)
-      : `${t("harnessViolations")}:0`;
+    const violationText =
+      health.totalViolations > 0
+        ? red(`${t("harnessViolations")}:${health.totalViolations}`)
+        : `${t("harnessViolations")}:0`;
 
     lines.push(
       `  ${t("harnessStatsLabel")} ${t("harnessGuards")}:${guardEventCount} ${t("harnessSensors")}:${sensorEventCount} ${t("harnessBlock")}:${blockCount} ${violationText} ${t("harnessTrend")}:${trendText}`,
     );
+  }
+
+  if (health.readEditRatio) {
+    const line = renderReadEditLine(health.readEditRatio, config);
+    if (line) lines.push(line);
+  }
+
+  if (health.violationBreakdown) {
+    const line = renderViolationBreakdownLine(
+      health.violationBreakdown,
+      config,
+    );
+    if (line) lines.push(line);
+  }
+
+  if (health.baseline) {
+    const line = renderBaselineLine(
+      health.baseline,
+      health.readEditRatio ?? null,
+      config,
+    );
+    if (line) lines.push(line);
   }
 
   for (const event of health.recentEvents ?? []) {
@@ -670,12 +1138,19 @@ export function renderHarnessLines(ctx: RenderContext): string[] {
   return lines;
 }
 
-export function getHarnessHealth(stdinData: StdinData, config: HudConfig): HarnessHealth | undefined {
+export function getHarnessHealth(
+  stdinData: StdinData,
+  config: HudConfig,
+  transcript?: TranscriptData,
+): HarnessHealth | undefined {
   if (!config.harness?.enabled) {
     return undefined;
   }
 
-  const events = parseHarnessEvents(stdinData.session_id, stdinData.transcript_path);
+  const events = parseHarnessEvents(
+    stdinData.session_id,
+    stdinData.transcript_path,
+  );
   const installedIds = detectInstalledComponents(stdinData.cwd);
   const componentEventCounts = new Map<string, number>();
   const componentBlockCounts = new Map<string, number>();
@@ -687,9 +1162,15 @@ export function getHarnessHealth(stdinData: StdinData, config: HudConfig): Harne
       continue;
     }
 
-    componentEventCounts.set(event.source, (componentEventCounts.get(event.source) ?? 0) + 1);
+    componentEventCounts.set(
+      event.source,
+      (componentEventCounts.get(event.source) ?? 0) + 1,
+    );
     if (event.event.endsWith(".block")) {
-      componentBlockCounts.set(event.source, (componentBlockCounts.get(event.source) ?? 0) + 1);
+      componentBlockCounts.set(
+        event.source,
+        (componentBlockCounts.get(event.source) ?? 0) + 1,
+      );
     }
 
     if (isViolationEvent(event)) {
@@ -704,32 +1185,44 @@ export function getHarnessHealth(stdinData: StdinData, config: HudConfig): Harne
     }
   }
 
-  const components: HarnessComponentState[] = HARNESS_COMPONENTS.map(component => {
-    const eventCount = componentEventCounts.get(component.id) ?? 0;
-    const blockCount = componentBlockCounts.get(component.id) ?? 0;
-    let status: ComponentStatus = "missing";
-    if (installedIds.has(component.id)) {
-      status = activeIds.has(component.id) ? "active" : "installed";
-    }
+  const components: HarnessComponentState[] = HARNESS_COMPONENTS.map(
+    (component) => {
+      const eventCount = componentEventCounts.get(component.id) ?? 0;
+      const blockCount = componentBlockCounts.get(component.id) ?? 0;
+      let status: ComponentStatus = "missing";
+      if (installedIds.has(component.id)) {
+        status = activeIds.has(component.id) ? "active" : "installed";
+      }
 
-    return {
-      id: component.id,
-      name: component.name,
-      type: component.type,
-      status,
-      eventCount,
-      blockCount,
-      weight: component.weight,
-    };
-  });
+      return {
+        id: component.id,
+        name: component.name,
+        type: component.type,
+        status,
+        eventCount,
+        blockCount,
+        weight: component.weight,
+      };
+    },
+  );
 
-  const nonViolationCount = events.filter(event => !isViolationEvent(event)).length;
+  const nonViolationCount = events.filter(
+    (event) => !isViolationEvent(event),
+  ).length;
   const score = calculateHealth({
     installedIds,
     activeIds,
     nonViolationCount,
     violationCount: totalViolations,
   });
+
+  const readEditRatio =
+    computeReadEditRatio(transcript?.toolCounts) ?? undefined;
+  const violationBreakdown = computeViolationBreakdown(events);
+  const baseline = loadBaseline(config) ?? undefined;
+  if (baseline && readEditRatio) {
+    baseline.rEZScore = computeBaselineZScore(readEditRatio.ratio, baseline);
+  }
 
   return {
     score,
@@ -739,5 +1232,11 @@ export function getHarnessHealth(stdinData: StdinData, config: HudConfig): Harne
     totalViolations,
     sessionEvents: events.length,
     recentEvents: getRecentNotableEvents(events),
+    readEditRatio,
+    violationBreakdown:
+      Object.keys(violationBreakdown).length > 0
+        ? violationBreakdown
+        : undefined,
+    baseline,
   };
 }

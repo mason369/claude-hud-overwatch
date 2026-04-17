@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { calculateHealth, getHarnessHealth, renderHarnessLines } from '../dist/render/lines/harness.js';
+import { calculateHealth, getHarnessHealth, renderHarnessLines, computeReadEditRatio, loadBaseline, computeBaselineZScore } from '../dist/render/lines/harness.js';
 import { mergeConfig } from '../dist/config.js';
 import { setLanguage } from '../dist/i18n/index.js';
 import { matchesSession } from '../dist/utils/session-match.js';
@@ -135,6 +135,7 @@ test('calculateHealth returns maximum with all components installed, active, and
   const allIds = new Set([
     'agent-opus', 'research-first', 'effort-max', 'safety-gate', 'linter-protection', 'cbm-gate',
     'auto-format', 'completion-gate', 'stop-phrase-guard', 'read-tracker', 'teammate-idle', 'task-completed',
+    'edit-quality', 'grep-tracker', 'prompt-rescuer', 'session-summary',
   ]);
   const score = calculateHealth({
     installedIds: allIds,
@@ -189,8 +190,8 @@ test('calculateHealth caps violation penalty at 20', () => {
 
 test('calculateHealth weights installed components correctly', () => {
   // Only install safety-gate (weight 3) and completion-gate (weight 3)
-  // Total weight: 19, installed weight: 6
-  // Base: (6/19) * 60 ≈ 18.9
+  // Total weight: 25 (all 16 components), installed weight: 6
+  // Base: (6/25) * 60 = 14.4
   const installed = new Set(['safety-gate', 'completion-gate']);
   const score = calculateHealth({
     installedIds: installed,
@@ -198,8 +199,8 @@ test('calculateHealth weights installed components correctly', () => {
     nonViolationCount: 0,
     violationCount: 0,
   });
-  // Base: round((6/19)*60) = round(18.9) with no active/stability bonus
-  assert.ok(score >= 18 && score <= 20, `expected base score around 19, got ${score}`);
+  // Base: round((6/25)*60) = round(14.4) with no active/stability bonus
+  assert.ok(score >= 13 && score <= 15, `expected base score around 14, got ${score}`);
 });
 
 test('calculateHealth gives stability bonus for non-violation events', () => {
@@ -233,6 +234,7 @@ test('calculateHealth clamps score between 0 and 100', () => {
   const allIds = new Set([
     'agent-opus', 'research-first', 'effort-max', 'safety-gate', 'linter-protection', 'cbm-gate',
     'auto-format', 'completion-gate', 'stop-phrase-guard', 'read-tracker', 'teammate-idle', 'task-completed',
+    'edit-quality', 'grep-tracker', 'prompt-rescuer', 'session-summary',
   ]);
   const scoreHigh = calculateHealth({
     installedIds: allIds,
@@ -901,4 +903,557 @@ test('renderHarnessLines explains a running completion-gate event in Chinese', (
   const lines = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
 
   assert.ok(lines.some(line => line.includes('↳ 事件[') && line.includes('完成') && line.includes('正在运行测试') && line.includes('npm test')), JSON.stringify(lines));
+});
+
+// --- Phase 2: R/E ratio ---------------------------------------------------
+
+test('computeReadEditRatio returns 2.0 when Read:10 Edit:5', () => {
+  const result = computeReadEditRatio({ Read: 10, Edit: 5 });
+  assert.ok(result, 'expected ratio object');
+  assert.equal(result.ratio, 2);
+  assert.equal(result.reads, 10);
+  assert.equal(result.edits, 5);
+  assert.equal(result.writes, 0);
+});
+
+test('computeReadEditRatio combines Edit and Write in denominator', () => {
+  // Read:10, Edit:3, Write:2 => denom=5 => ratio=2.0
+  const result = computeReadEditRatio({ Read: 10, Edit: 3, Write: 2 });
+  assert.ok(result);
+  assert.equal(result.ratio, 2);
+  assert.equal(result.edits, 3);
+  assert.equal(result.writes, 2);
+});
+
+test('computeReadEditRatio returns null when toolCounts is undefined', () => {
+  assert.equal(computeReadEditRatio(undefined), null);
+});
+
+test('computeReadEditRatio returns null when toolCounts has no Read/Edit/Write', () => {
+  assert.equal(computeReadEditRatio({}), null);
+  assert.equal(computeReadEditRatio({ Bash: 5 }), null);
+});
+
+test('computeReadEditRatio uses denom=1 when no edits/writes (reads-only)', () => {
+  // Read:8, Edit:0, Write:0 => denom=max(0,1)=1 => ratio=8
+  const result = computeReadEditRatio({ Read: 8 });
+  assert.ok(result);
+  assert.equal(result.ratio, 8);
+  assert.equal(result.edits, 0);
+  assert.equal(result.writes, 0);
+});
+
+test('renderHarnessLines renders R/E line in yellow when ratio below warning threshold', () => {
+  setLanguage('zh');
+
+  // ratio 2.0 < warning 2.5 but > critical 1.5 => yellow
+  const ctx = baseRenderContext({
+    harness: {
+      score: 80,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      readEditRatio: { ratio: 2.0, reads: 10, edits: 5, writes: 0 },
+    },
+  });
+
+  const rawLines = renderHarnessLines(ctx);
+  const plain = rawLines.map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+
+  const rELine = plain.find(line => line.includes('R/E: 2.0'));
+  assert.ok(rELine, `expected R/E line, got ${JSON.stringify(plain)}`);
+  assert.ok(rELine.includes('读:10'), rELine);
+  assert.ok(rELine.includes('改:5'), rELine);
+  assert.ok(rELine.includes('写:0'), rELine);
+
+  const rawRELine = rawLines.find(line => line.replace(/\x1b\[[0-9;]*m/g, '').includes('R/E: 2.0'));
+  assert.ok(rawRELine.includes('\x1b[33m'), `expected yellow ANSI, got ${JSON.stringify(rawRELine)}`);
+});
+
+test('renderHarnessLines renders R/E in red when ratio below critical threshold', () => {
+  setLanguage('zh');
+
+  // ratio 1.0 < critical 1.5 => red
+  const ctx = baseRenderContext({
+    harness: {
+      score: 60,
+      trend: 'down',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      readEditRatio: { ratio: 1.0, reads: 4, edits: 4, writes: 0 },
+    },
+  });
+
+  const rawLines = renderHarnessLines(ctx);
+  const rawRELine = rawLines.find(line => line.replace(/\x1b\[[0-9;]*m/g, '').includes('R/E: 1.0'));
+  assert.ok(rawRELine, `expected R/E line; got ${JSON.stringify(rawLines)}`);
+  assert.ok(rawRELine.includes('\x1b[31m'), `expected red ANSI, got ${JSON.stringify(rawRELine)}`);
+});
+
+test('renderHarnessLines renders R/E in green when ratio at/above warning threshold', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 95,
+      trend: 'up',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      readEditRatio: { ratio: 3.0, reads: 9, edits: 3, writes: 0 },
+    },
+  });
+
+  const rawLines = renderHarnessLines(ctx);
+  const rawRELine = rawLines.find(line => line.replace(/\x1b\[[0-9;]*m/g, '').includes('R/E: 3.0'));
+  assert.ok(rawRELine, 'expected R/E line');
+  assert.ok(rawRELine.includes('\x1b[32m'), `expected green ANSI, got ${JSON.stringify(rawRELine)}`);
+});
+
+test('renderHarnessLines omits R/E line when readEditRatio is absent (empty toolCounts)', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 80,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      // No readEditRatio — matches computeReadEditRatio({}) returning null
+    },
+  });
+
+  const plain = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  assert.ok(!plain.some(line => line.includes('R/E:')), `no R/E line expected, got ${JSON.stringify(plain)}`);
+});
+
+test('renderHarnessLines omits R/E line when show=false', () => {
+  setLanguage('zh');
+
+  const config = mergeConfig({
+    harness: { readEditRatio: { show: false } },
+  });
+
+  const ctx = baseRenderContext({
+    config,
+    harness: {
+      score: 80,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      readEditRatio: { ratio: 2.0, reads: 10, edits: 5, writes: 0 },
+    },
+  });
+
+  const plain = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  assert.ok(!plain.some(line => line.includes('R/E:')), `no R/E line expected when show=false, got ${JSON.stringify(plain)}`);
+});
+
+// --- Phase 2: violation breakdown -----------------------------------------
+
+test('renderHarnessLines renders violation breakdown with translated category labels', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 55,
+      trend: 'down',
+      components: [],
+      totalEvents: 3,
+      totalViolations: 3,
+      sessionEvents: 3,
+      recentEvents: [],
+      violationBreakdown: {
+        'premature-stop': 2,
+        'ownership-deflection': 1,
+      },
+    },
+  });
+
+  const plain = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  const vLine = plain.find(line => line.includes('⚠') && line.includes('违规:'));
+  assert.ok(vLine, `expected violation breakdown line, got ${JSON.stringify(plain)}`);
+  assert.ok(vLine.includes('过早停×2'), `expected premature-stop translation, got ${vLine}`);
+  assert.ok(vLine.includes('逃避×1'), `expected ownership-deflection translation, got ${vLine}`);
+});
+
+test('renderHarnessLines omits violation breakdown line when breakdown is empty', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 90,
+      trend: 'up',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      violationBreakdown: {},
+    },
+  });
+
+  const plain = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  // The breakdown line starts with the warning glyph + violations label
+  assert.ok(
+    !plain.some(line => line.includes('⚠') && line.includes('违规:')),
+    `no breakdown line expected for empty breakdown, got ${JSON.stringify(plain)}`,
+  );
+});
+
+test('renderHarnessLines omits violation breakdown line when all counts are 0', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 90,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      violationBreakdown: { 'premature-stop': 0, 'ownership-deflection': 0 },
+    },
+  });
+
+  const plain = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  assert.ok(
+    !plain.some(line => line.includes('⚠') && line.includes('违规:')),
+    `no breakdown line expected when all counts are zero, got ${JSON.stringify(plain)}`,
+  );
+});
+
+test('renderHarnessLines falls back to raw category id when translation is missing', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 55,
+      trend: 'down',
+      components: [],
+      totalEvents: 1,
+      totalViolations: 1,
+      sessionEvents: 1,
+      recentEvents: [],
+      violationBreakdown: { 'totally-unknown-category': 1 },
+    },
+  });
+
+  const plain = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  const vLine = plain.find(line => line.includes('⚠') && line.includes('违规:'));
+  assert.ok(vLine, `expected violation breakdown line, got ${JSON.stringify(plain)}`);
+  assert.ok(vLine.includes('totally-unknown-category×1'), vLine);
+});
+
+// --- Phase 2: baseline ------------------------------------------------------
+
+test('loadBaseline returns null when session-summary.jsonl does not exist', async () => {
+  await withTempHome(async () => {
+    const config = mergeConfig({});
+    const baseline = loadBaseline(config);
+    assert.equal(baseline, null);
+  });
+});
+
+test('loadBaseline returns collecting state when fewer than minSessions entries', async () => {
+  await withTempHome(async homeDir => {
+    const logDir = path.join(homeDir, '.claude', 'logs');
+    await mkdir(logDir, { recursive: true });
+    // Write 3 entries when minSessions=5
+    await writeFile(
+      path.join(logDir, 'session-summary.jsonl'),
+      [
+        JSON.stringify({ r_e_ratio: 2.1 }),
+        JSON.stringify({ r_e_ratio: 2.2 }),
+        JSON.stringify({ r_e_ratio: 2.3 }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = mergeConfig({});
+    const baseline = loadBaseline(config);
+    assert.ok(baseline, 'expected baseline object');
+    assert.equal(baseline.rEMedian, null);
+    assert.equal(baseline.rEMad, null);
+    assert.equal(baseline.sessionCount, 3);
+  });
+});
+
+test('loadBaseline computes median and MAD from last windowSize entries', async () => {
+  await withTempHome(async homeDir => {
+    const logDir = path.join(homeDir, '.claude', 'logs');
+    await mkdir(logDir, { recursive: true });
+    // Ratios: [4.0, 4.5, 4.5, 5.0, 5.5] => median=4.5
+    // Residuals: [0.5, 0, 0, 0.5, 1.0] => median(sorted [0,0,0.5,0.5,1.0]) = 0.5
+    await writeFile(
+      path.join(logDir, 'session-summary.jsonl'),
+      [
+        JSON.stringify({ r_e_ratio: 4.0 }),
+        JSON.stringify({ r_e_ratio: 4.5 }),
+        JSON.stringify({ r_e_ratio: 4.5 }),
+        JSON.stringify({ r_e_ratio: 5.0 }),
+        JSON.stringify({ r_e_ratio: 5.5 }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = mergeConfig({});
+    const baseline = loadBaseline(config);
+    assert.ok(baseline, 'expected baseline');
+    assert.equal(baseline.sessionCount, 5);
+    assert.equal(baseline.rEMedian, 4.5);
+    assert.equal(baseline.rEMad, 0.5);
+  });
+});
+
+test('loadBaseline ignores malformed JSON lines', async () => {
+  await withTempHome(async homeDir => {
+    const logDir = path.join(homeDir, '.claude', 'logs');
+    await mkdir(logDir, { recursive: true });
+    await writeFile(
+      path.join(logDir, 'session-summary.jsonl'),
+      [
+        'not-json',
+        JSON.stringify({ r_e_ratio: 3.0 }),
+        '{broken',
+        JSON.stringify({ r_e_ratio: 3.0 }),
+        JSON.stringify({ r_e_ratio: 3.0 }),
+        JSON.stringify({ r_e_ratio: 3.0 }),
+        JSON.stringify({ r_e_ratio: 3.0 }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = mergeConfig({});
+    const baseline = loadBaseline(config);
+    assert.ok(baseline);
+    assert.equal(baseline.sessionCount, 5);
+    assert.equal(baseline.rEMedian, 3.0);
+    assert.equal(baseline.rEMad, 0);
+  });
+});
+
+test('loadBaseline returns null when baseline.enabled=false', async () => {
+  await withTempHome(async homeDir => {
+    const logDir = path.join(homeDir, '.claude', 'logs');
+    await mkdir(logDir, { recursive: true });
+    await writeFile(
+      path.join(logDir, 'session-summary.jsonl'),
+      [
+        JSON.stringify({ r_e_ratio: 3.0 }),
+        JSON.stringify({ r_e_ratio: 3.0 }),
+        JSON.stringify({ r_e_ratio: 3.0 }),
+        JSON.stringify({ r_e_ratio: 3.0 }),
+        JSON.stringify({ r_e_ratio: 3.0 }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = mergeConfig({ harness: { baseline: { enabled: false } } });
+    const baseline = loadBaseline(config);
+    assert.equal(baseline, null);
+  });
+});
+
+test('computeBaselineZScore returns null when median or mad is null', () => {
+  assert.equal(
+    computeBaselineZScore(2.0, { rEMedian: null, rEMad: 0.5, rEZScore: null, sessionCount: 10 }),
+    null,
+  );
+  assert.equal(
+    computeBaselineZScore(2.0, { rEMedian: 4.5, rEMad: null, rEZScore: null, sessionCount: 10 }),
+    null,
+  );
+});
+
+test('computeBaselineZScore returns null when mad is zero (no variance)', () => {
+  assert.equal(
+    computeBaselineZScore(2.0, { rEMedian: 4.5, rEMad: 0, rEZScore: null, sessionCount: 10 }),
+    null,
+  );
+});
+
+test('computeBaselineZScore produces the documented z≈-3.37 for deviation fixture', () => {
+  // median=4.5, mad=0.5, current=2.0 => z = (2.0 - 4.5) / (1.4826 * 0.5) ≈ -3.373
+  const z = computeBaselineZScore(2.0, {
+    rEMedian: 4.5,
+    rEMad: 0.5,
+    rEZScore: null,
+    sessionCount: 10,
+  });
+  assert.ok(z !== null, 'expected z-score');
+  assert.ok(Math.abs(z - -3.373) < 0.01, `expected z≈-3.37, got ${z}`);
+});
+
+test('renderHarnessLines renders baseline collecting state with dim color', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 80,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      baseline: { rEMedian: null, rEMad: null, rEZScore: null, sessionCount: 2 },
+    },
+  });
+
+  const rawLines = renderHarnessLines(ctx);
+  const plain = rawLines.map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  const baseLine = plain.find(line => line.includes('基线:') && line.includes('收集中'));
+  assert.ok(baseLine, `expected collecting baseline line, got ${JSON.stringify(plain)}`);
+  assert.ok(baseLine.includes('(2/5)'), baseLine);
+
+  const rawBaseLine = rawLines.find(line => line.replace(/\x1b\[[0-9;]*m/g, '').includes('收集中'));
+  assert.ok(rawBaseLine.includes('\x1b[2m'), `expected dim ANSI, got ${JSON.stringify(rawBaseLine)}`);
+});
+
+test('renderHarnessLines renders baseline deviation in red with down arrow for z=-3.37', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 40,
+      trend: 'down',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      readEditRatio: { ratio: 2.0, reads: 10, edits: 5, writes: 0 },
+      baseline: { rEMedian: 4.5, rEMad: 0.5, rEZScore: null, sessionCount: 10 },
+    },
+  });
+
+  const rawLines = renderHarnessLines(ctx);
+  const plain = rawLines.map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  const baseLine = plain.find(line => line.includes('基线:') && line.includes('4.5'));
+  assert.ok(baseLine, `expected baseline deviation line, got ${JSON.stringify(plain)}`);
+  assert.ok(baseLine.includes('↓'), `expected down arrow, got ${baseLine}`);
+  assert.ok(baseLine.includes('-3.4σ'), `expected z≈-3.4σ, got ${baseLine}`);
+  assert.ok(baseLine.includes('当前偏离'), baseLine);
+
+  const rawBaseLine = rawLines.find(line => line.replace(/\x1b\[[0-9;]*m/g, '').includes('当前偏离'));
+  assert.ok(rawBaseLine.includes('\x1b[31m'), `expected red ANSI, got ${JSON.stringify(rawBaseLine)}`);
+});
+
+test('renderHarnessLines renders baseline deviation in yellow when |z| between warnZ and criticalZ', () => {
+  setLanguage('zh');
+
+  // median=4.0, mad=0.5 => z for 3.0 = (3.0-4.0)/(1.4826*0.5) ≈ -1.35 (|z| between 1 and 2)
+  const ctx = baseRenderContext({
+    harness: {
+      score: 70,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      readEditRatio: { ratio: 3.0, reads: 6, edits: 2, writes: 0 },
+      baseline: { rEMedian: 4.0, rEMad: 0.5, rEZScore: null, sessionCount: 10 },
+    },
+  });
+
+  const rawLines = renderHarnessLines(ctx);
+  const rawBaseLine = rawLines.find(line => line.replace(/\x1b\[[0-9;]*m/g, '').includes('当前偏离'));
+  assert.ok(rawBaseLine, 'expected baseline deviation line');
+  assert.ok(rawBaseLine.includes('\x1b[33m'), `expected yellow ANSI, got ${JSON.stringify(rawBaseLine)}`);
+});
+
+test('renderHarnessLines omits baseline line when baseline.enabled=false', () => {
+  setLanguage('zh');
+
+  const config = mergeConfig({ harness: { baseline: { enabled: false } } });
+
+  const ctx = baseRenderContext({
+    config,
+    harness: {
+      score: 80,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      baseline: { rEMedian: 4.5, rEMad: 0.5, rEZScore: null, sessionCount: 10 },
+    },
+  });
+
+  const plain = renderHarnessLines(ctx).map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  assert.ok(!plain.some(line => line.includes('基线:')), `no baseline line expected, got ${JSON.stringify(plain)}`);
+});
+
+// --- Phase 2: backward compatibility --------------------------------------
+
+test('mergeConfig keeps Phase 2 defaults when user provides only top-level harness flags', () => {
+  const config = mergeConfig({ harness: { enabled: true } });
+  assert.equal(config.harness.readEditRatio.show, true);
+  assert.equal(config.harness.readEditRatio.warning, 2.5);
+  assert.equal(config.harness.readEditRatio.critical, 1.5);
+  assert.equal(config.harness.violationBreakdown.show, true);
+  assert.equal(config.harness.baseline.enabled, true);
+  assert.equal(config.harness.baseline.windowSize, 30);
+  assert.equal(config.harness.baseline.minSessions, 5);
+  assert.equal(config.harness.baseline.warnZ, 1);
+  assert.equal(config.harness.baseline.criticalZ, 2);
+});
+
+test('mergeConfig accepts partial Phase 2 overrides without discarding defaults', () => {
+  const config = mergeConfig({
+    harness: {
+      readEditRatio: { warning: 3.0 },
+      baseline: { windowSize: 50 },
+    },
+  });
+  assert.equal(config.harness.readEditRatio.warning, 3.0);
+  // Defaults retained:
+  assert.equal(config.harness.readEditRatio.show, true);
+  assert.equal(config.harness.readEditRatio.critical, 1.5);
+  assert.equal(config.harness.baseline.windowSize, 50);
+  assert.equal(config.harness.baseline.enabled, true);
+  assert.equal(config.harness.baseline.minSessions, 5);
+});
+
+test('renderHarnessLines does not crash on bare harness health without Phase 2 fields', () => {
+  setLanguage('zh');
+
+  const ctx = baseRenderContext({
+    harness: {
+      score: 80,
+      trend: 'stable',
+      components: [],
+      totalEvents: 0,
+      totalViolations: 0,
+      sessionEvents: 0,
+      recentEvents: [],
+      // No readEditRatio, no violationBreakdown, no baseline — legacy shape
+    },
+  });
+
+  const lines = renderHarnessLines(ctx);
+  assert.ok(Array.isArray(lines), 'expected lines array');
+  assert.ok(lines.length >= 1, 'expected at least the summary line');
+  const plain = lines.map(line => line.replace(/\x1b\[[0-9;]*m/g, ''));
+  assert.ok(!plain.some(line => line.includes('R/E:')), 'no R/E line');
+  assert.ok(!plain.some(line => line.includes('基线:')), 'no baseline line');
+  assert.ok(!plain.some(line => line.includes('⚠') && line.includes('违规:')), 'no breakdown line');
 });

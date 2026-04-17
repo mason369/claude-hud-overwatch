@@ -71,6 +71,33 @@ export const zh = {
     "harnessComponent.read-tracker": "\u8BFB\u53D6",
     "harnessComponent.teammate-idle": "\u7A7A\u95F2",
     "harnessComponent.task-completed": "\u4EFB\u52A1",
+    "harnessComponent.edit-quality": "\u7F16\u8F91\u8D28\u91CF",
+    "harnessComponent.grep-tracker": "Grep\u8FFD\u8E2A",
+    "harnessComponent.prompt-rescuer": "\u63D0\u793A\u6551\u63F4",
+    "harnessComponent.session-summary": "\u4F1A\u8BDD\u6458\u8981",
+    // Harness Phase 2: R/E ratio
+    harnessReadEdit: "R/E",
+    harnessReadLabel: "\u8BFB",
+    harnessEditLabel: "\u6539",
+    harnessWriteLabel: "\u5199",
+    // Harness Phase 2: violation categories
+    "harnessViolationCategory.ownership-deflection": "\u9003\u907F",
+    "harnessViolationCategory.permission-seeking": "\u5F81\u8BE2",
+    "harnessViolationCategory.premature-stop": "\u8FC7\u65E9\u505C",
+    "harnessViolationCategory.known-limitation-excuse": "\u501F\u53E3",
+    "harnessViolationCategory.session-excuse": "\u4F1A\u8BDD\u6258\u8F9E",
+    // Harness Phase 2: baseline
+    harnessBaseline: "\u57FA\u7EBF",
+    harnessBaselineDeviation: "\u5F53\u524D\u504F\u79BB",
+    harnessBaselineSessions: "\u4F1A\u8BDD",
+    harnessBaselineCollecting: "\u6536\u96C6\u4E2D",
+    // Harness Phase 2: reasons
+    "harnessReason.editQuality.r1": "\u6A21\u5F0F\u8FC7\u77ED\u6613\u8BEF\u5339\u914D",
+    "harnessReason.editQuality.r2": "\u672A Grep \u524D\u4E0D\u53EF\u5168\u5C40\u66FF\u6362",
+    "harnessReason.editQuality.r3": "Write \u524D\u5FC5\u987B\u5148 Read",
+    "harnessReason.promptRescuer.t1": "\u632B\u8D25\u5FAA\u73AF\u68C0\u6D4B",
+    "harnessReason.promptRescuer.t2": "\u590D\u6742\u591A\u6B65\u9AA4\u4EFB\u52A1",
+    "harnessReason.promptRescuer.t3": "\u660E\u663E\u56DE\u6EAF",
     // Init
     "init.initializing": "[claude-hud] \u6B63\u5728\u521D\u59CB\u5316...",
     "init.macosNote": "[claude-hud] \u6CE8\u610F\uFF1A\u5728 macOS \u4E0A\uFF0C\u60A8\u53EF\u80FD\u9700\u8981\u91CD\u542F Claude Code \u624D\u80FD\u663E\u793A HUD\u3002",

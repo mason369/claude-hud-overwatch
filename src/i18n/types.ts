@@ -71,6 +71,33 @@ export type MessageKey =
   | "harnessComponent.read-tracker"
   | "harnessComponent.teammate-idle"
   | "harnessComponent.task-completed"
+  | "harnessComponent.edit-quality"
+  | "harnessComponent.grep-tracker"
+  | "harnessComponent.prompt-rescuer"
+  | "harnessComponent.session-summary"
+  // Harness Phase 2: R/E ratio
+  | "harnessReadEdit"
+  | "harnessReadLabel"
+  | "harnessEditLabel"
+  | "harnessWriteLabel"
+  // Harness Phase 2: violation categories
+  | "harnessViolationCategory.ownership-deflection"
+  | "harnessViolationCategory.permission-seeking"
+  | "harnessViolationCategory.premature-stop"
+  | "harnessViolationCategory.known-limitation-excuse"
+  | "harnessViolationCategory.session-excuse"
+  // Harness Phase 2: baseline
+  | "harnessBaseline"
+  | "harnessBaselineDeviation"
+  | "harnessBaselineSessions"
+  | "harnessBaselineCollecting"
+  // Harness Phase 2: new reason keys
+  | "harnessReason.editQuality.r1"
+  | "harnessReason.editQuality.r2"
+  | "harnessReason.editQuality.r3"
+  | "harnessReason.promptRescuer.t1"
+  | "harnessReason.promptRescuer.t2"
+  | "harnessReason.promptRescuer.t3"
   // Init
   | "init.initializing"
   | "init.macosNote";
