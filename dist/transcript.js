@@ -61,6 +61,7 @@ function serializeTranscriptData(data) {
         sessionName: data.sessionName,
         sessionTokens: data.sessionTokens,
         toolCounts: { ...data.toolCounts },
+        interruptCount: data.interruptCount,
     };
 }
 function deserializeTranscriptData(data) {
@@ -80,6 +81,11 @@ function deserializeTranscriptData(data) {
         sessionName: data.sessionName,
         sessionTokens: normalizeSessionTokens(data.sessionTokens),
         toolCounts: normalizeToolCounts(data.toolCounts),
+        interruptCount: typeof data.interruptCount === "number" &&
+            Number.isFinite(data.interruptCount) &&
+            data.interruptCount >= 0
+            ? Math.trunc(data.interruptCount)
+            : 0,
     };
 }
 function normalizeToolCounts(raw) {
@@ -131,6 +137,7 @@ export async function parseTranscript(transcriptPath) {
         agents: [],
         todos: [],
         toolCounts: {},
+        interruptCount: 0,
     };
     if (!transcriptPath || !fs.existsSync(transcriptPath)) {
         return result;
@@ -215,6 +222,13 @@ function processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, resu
     if (!content || !Array.isArray(content))
         return;
     for (const block of content) {
+        if (entry.type === "user" &&
+            block.type === "text" &&
+            typeof block.text === "string" &&
+            block.text.startsWith("[Request interrupted by user")) {
+            result.interruptCount += 1;
+            continue;
+        }
         if (block.type === "tool_use" && block.id && block.name) {
             // Independent full-session tally (unaffected by later slice(-20)).
             // Must run before any branch that routes to toolMap/agentMap.

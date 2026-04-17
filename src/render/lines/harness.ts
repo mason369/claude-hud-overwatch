@@ -8,6 +8,7 @@ import type {
   HarnessRecentEvent,
   HarnessReadEditRatio,
   HarnessBaseline,
+  HarnessInterruptRate,
   ComponentStatus,
   HealthTrend,
   StdinData,
@@ -831,6 +832,21 @@ export function computeReadEditRatio(
   return { ratio: reads / denom, reads, edits, writes };
 }
 
+export function computeInterruptRate(
+  toolCounts: Record<string, number> | undefined,
+  interruptCount: number | undefined,
+): HarnessInterruptRate | null {
+  if (!toolCounts) return null;
+  const toolCalls = Object.values(toolCounts).reduce(
+    (sum, n) => sum + (Number.isFinite(n) ? n : 0),
+    0,
+  );
+  const interrupts = Math.max(0, interruptCount ?? 0);
+  if (toolCalls === 0 && interrupts === 0) return null;
+  const rate = toolCalls > 0 ? (interrupts * 1000) / toolCalls : 0;
+  return { rate, interrupts, toolCalls };
+}
+
 function computeViolationBreakdown(
   events: HarnessEvent[],
 ): Record<string, number> {
@@ -947,6 +963,39 @@ function renderReadEditLine(
   }
 
   if (value < warningThreshold) {
+    return `  ${yellow(prefix + body)}`;
+  }
+
+  return `  ${green(prefix + body)}`;
+}
+
+function renderInterruptRateLine(
+  rate: HarnessInterruptRate,
+  config: HudConfig,
+): string | null {
+  const rateConfig = config.harness?.interruptRate;
+  if (rateConfig?.show === false) return null;
+
+  const warningThreshold = rateConfig?.warning ?? 2;
+  const criticalThreshold = rateConfig?.critical ?? 5;
+
+  const { rate: value, interrupts, toolCalls } = rate;
+  const rateStr = value.toFixed(1);
+  const label = t("harnessInterruptRate");
+  const intLabel = t("harnessInterruptLabel");
+  const unit = t("harnessInterruptUnit");
+  const body = `${label}: ${rateStr}${unit} | ${intLabel}:${interrupts}/${toolCalls}`;
+  const prefix = "\u26A1 ";
+
+  if (interrupts === 0) {
+    return `  ${dim(prefix + body)}`;
+  }
+
+  if (value >= criticalThreshold) {
+    return `  ${red(prefix + body)}`;
+  }
+
+  if (value >= warningThreshold) {
     return `  ${yellow(prefix + body)}`;
   }
 
@@ -1130,6 +1179,11 @@ export function renderHarnessLines(ctx: RenderContext): string[] {
     if (line) lines.push(line);
   }
 
+  if (health.interruptRate) {
+    const line = renderInterruptRateLine(health.interruptRate, config);
+    if (line) lines.push(line);
+  }
+
   if (health.violationBreakdown) {
     const line = renderViolationBreakdownLine(
       health.violationBreakdown,
@@ -1234,6 +1288,9 @@ export function getHarnessHealth(
 
   const readEditRatio =
     computeReadEditRatio(transcript?.toolCounts) ?? undefined;
+  const interruptRate =
+    computeInterruptRate(transcript?.toolCounts, transcript?.interruptCount) ??
+    undefined;
   const violationBreakdown = computeViolationBreakdown(events);
   const baseline = loadBaseline(config) ?? undefined;
   if (baseline && readEditRatio) {
@@ -1254,5 +1311,6 @@ export function getHarnessHealth(
         ? violationBreakdown
         : undefined,
     baseline,
+    interruptRate,
   };
 }

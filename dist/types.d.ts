@@ -92,6 +92,12 @@ export interface TranscriptData {
      * full session total — required for Read:Edit ratio and baseline metrics.
      */
     toolCounts: Record<string, number>;
+    /**
+     * Number of user-interruption events detected in the transcript. Each is a
+     * user-role text block starting with "[Request interrupted by user".
+     * Early-warning signal for issue #42796: normal ≈0.9/1k tools, degraded ≈11.4/1k.
+     */
+    interruptCount: number;
 }
 export type ComponentStatus = "active" | "installed" | "missing";
 export type HealthTrend = "up" | "down" | "stable";
@@ -124,6 +130,11 @@ export interface HarnessBaseline {
     rEZScore: number | null;
     sessionCount: number;
 }
+export interface HarnessInterruptRate {
+    rate: number;
+    interrupts: number;
+    toolCalls: number;
+}
 export interface HarnessHealth {
     score: number;
     trend: HealthTrend;
@@ -138,6 +149,8 @@ export interface HarnessHealth {
     violationBreakdown?: Record<string, number>;
     /** Cross-session baseline + z-score for the Read:Edit ratio. */
     baseline?: HarnessBaseline;
+    /** User-interruption rate per 1000 tool calls; undefined when no tools yet. */
+    interruptRate?: HarnessInterruptRate;
 }
 export interface RenderContext {
     stdin: StdinData;

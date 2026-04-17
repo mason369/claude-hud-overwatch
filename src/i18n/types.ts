@@ -91,6 +91,11 @@ export type MessageKey =
   | "harnessBaselineDeviation"
   | "harnessBaselineSessions"
   | "harnessBaselineCollecting"
+  // Harness Phase 3: interrupt rate (issue #42796 early-warning)
+  | "harnessInterruptRate"
+  | "harnessInterruptLabel"
+  | "harnessInterruptUnit"
+  | "harnessViolationCategory.shortcut-mindset"
   // Harness Phase 2: new reason keys
   | "harnessReason.editQuality.r1"
   | "harnessReason.editQuality.r2"

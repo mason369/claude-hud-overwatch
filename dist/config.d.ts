@@ -95,6 +95,11 @@ export interface HudConfig {
             warnZ?: number;
             criticalZ?: number;
         };
+        interruptRate?: {
+            show?: boolean;
+            warning?: number;
+            critical?: number;
+        };
     };
     colors: HudColorOverrides;
 }

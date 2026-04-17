@@ -35,6 +35,7 @@ interface ContentBlock {
   input?: Record<string, unknown>;
   tool_use_id?: string;
   is_error?: boolean;
+  text?: string;
 }
 
 interface TranscriptFileState {
@@ -63,6 +64,7 @@ interface SerializedTranscriptData {
   sessionName?: string;
   sessionTokens?: SessionTokenUsage;
   toolCounts?: Record<string, number>;
+  interruptCount?: number;
 }
 
 interface TranscriptCacheFile {
@@ -147,6 +149,7 @@ function serializeTranscriptData(
     sessionName: data.sessionName,
     sessionTokens: data.sessionTokens,
     toolCounts: { ...data.toolCounts },
+    interruptCount: data.interruptCount,
   };
 }
 
@@ -169,6 +172,12 @@ function deserializeTranscriptData(
     sessionName: data.sessionName,
     sessionTokens: normalizeSessionTokens(data.sessionTokens),
     toolCounts: normalizeToolCounts(data.toolCounts),
+    interruptCount:
+      typeof data.interruptCount === "number" &&
+      Number.isFinite(data.interruptCount) &&
+      data.interruptCount >= 0
+        ? Math.trunc(data.interruptCount)
+        : 0,
   };
 }
 
@@ -234,6 +243,7 @@ export async function parseTranscript(
     agents: [],
     todos: [],
     toolCounts: {},
+    interruptCount: 0,
   };
 
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
@@ -353,6 +363,16 @@ function processEntry(
   if (!content || !Array.isArray(content)) return;
 
   for (const block of content) {
+    if (
+      entry.type === "user" &&
+      block.type === "text" &&
+      typeof block.text === "string" &&
+      block.text.startsWith("[Request interrupted by user")
+    ) {
+      result.interruptCount += 1;
+      continue;
+    }
+
     if (block.type === "tool_use" && block.id && block.name) {
       // Independent full-session tally (unaffected by later slice(-20)).
       // Must run before any branch that routes to toolMap/agentMap.

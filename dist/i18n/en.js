@@ -86,11 +86,16 @@ export const en = {
     "harnessViolationCategory.premature-stop": "earlyStop",
     "harnessViolationCategory.known-limitation-excuse": "excuse",
     "harnessViolationCategory.session-excuse": "session",
+    "harnessViolationCategory.shortcut-mindset": "shortcut",
     // Harness Phase 2: baseline
     harnessBaseline: "Baseline",
     harnessBaselineDeviation: "deviation",
     harnessBaselineSessions: "sessions",
     harnessBaselineCollecting: "collecting",
+    // Harness Phase 3: interrupt rate (issue #42796)
+    harnessInterruptRate: "Interrupt",
+    harnessInterruptLabel: "Int",
+    harnessInterruptUnit: "/1k tools",
     // Harness Phase 2: reasons
     "harnessReason.editQuality.r1": "pattern too short risks mismatch",
     "harnessReason.editQuality.r2": "cannot replace_all without a prior Grep",

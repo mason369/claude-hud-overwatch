@@ -102,12 +102,18 @@ export const zh: Messages = {
   "harnessViolationCategory.premature-stop": "\u8FC7\u65E9\u505C",
   "harnessViolationCategory.known-limitation-excuse": "\u501F\u53E3",
   "harnessViolationCategory.session-excuse": "\u4F1A\u8BDD\u6258\u8F9E",
+  "harnessViolationCategory.shortcut-mindset": "\u8D70\u6377\u5F84",
 
   // Harness Phase 2: baseline
   harnessBaseline: "\u57FA\u7EBF",
   harnessBaselineDeviation: "\u5F53\u524D\u504F\u79BB",
   harnessBaselineSessions: "\u4F1A\u8BDD",
   harnessBaselineCollecting: "\u6536\u96C6\u4E2D",
+
+  // Harness Phase 3: interrupt rate (issue #42796)
+  harnessInterruptRate: "\u4E2D\u65AD\u7387",
+  harnessInterruptLabel: "\u4E2D\u65AD",
+  harnessInterruptUnit: "\u6B21/\u5343\u6B21\u5DE5\u5177",
 
   // Harness Phase 2: reasons
   "harnessReason.editQuality.r1":

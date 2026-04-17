@@ -91,6 +91,11 @@ export const DEFAULT_CONFIG = {
             warnZ: 1,
             criticalZ: 2,
         },
+        interruptRate: {
+            show: true,
+            warning: 2,
+            critical: 5,
+        },
     },
     colors: {
         context: "green",
@@ -404,6 +409,21 @@ export function mergeConfig(userConfig) {
                 Number.isFinite(migrated.harness.baseline.criticalZ)
                 ? migrated.harness.baseline.criticalZ
                 : DEFAULT_CONFIG.harness.baseline.criticalZ,
+        },
+        interruptRate: {
+            show: typeof migrated.harness?.interruptRate?.show === "boolean"
+                ? migrated.harness.interruptRate.show
+                : DEFAULT_CONFIG.harness.interruptRate.show,
+            warning: typeof migrated.harness?.interruptRate?.warning === "number" &&
+                Number.isFinite(migrated.harness.interruptRate.warning) &&
+                migrated.harness.interruptRate.warning >= 0
+                ? migrated.harness.interruptRate.warning
+                : DEFAULT_CONFIG.harness.interruptRate.warning,
+            critical: typeof migrated.harness?.interruptRate?.critical === "number" &&
+                Number.isFinite(migrated.harness.interruptRate.critical) &&
+                migrated.harness.interruptRate.critical >= 0
+                ? migrated.harness.interruptRate.critical
+                : DEFAULT_CONFIG.harness.interruptRate.critical,
         },
     };
     const colors = {
