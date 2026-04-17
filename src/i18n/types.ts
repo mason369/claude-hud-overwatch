@@ -95,6 +95,10 @@ export type MessageKey =
   | "harnessInterruptRate"
   | "harnessInterruptLabel"
   | "harnessInterruptUnit"
+  // Harness R/M metric
+  | "harnessResearchRatio"
+  | "harnessResearchLabel"
+  | "harnessMutationLabel"
   | "harnessViolationCategory.shortcut-mindset"
   // Harness Phase 2: new reason keys
   | "harnessReason.editQuality.r1"
