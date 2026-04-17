@@ -1323,6 +1323,8 @@ export function getHarnessHealth(
 
   const readEditRatio =
     computeReadEditRatio(transcript?.toolCounts) ?? undefined;
+  const researchRatio =
+    computeResearchRatio(transcript?.toolCounts) ?? undefined;
   const interruptRate =
     computeInterruptRate(transcript?.toolCounts, transcript?.interruptCount) ??
     undefined;
@@ -1341,6 +1343,7 @@ export function getHarnessHealth(
     sessionEvents: events.length,
     recentEvents: getRecentNotableEvents(events),
     readEditRatio,
+    researchRatio,
     violationBreakdown:
       Object.keys(violationBreakdown).length > 0
         ? violationBreakdown
