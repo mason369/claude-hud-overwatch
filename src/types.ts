@@ -1,5 +1,5 @@
-import type { HudConfig } from './config.js';
-import type { GitStatus } from './git.js';
+import type { HudConfig } from "./config.js";
+import type { GitStatus } from "./git.js";
 
 export interface StdinData {
   session_id?: string;
@@ -44,7 +44,7 @@ export interface ToolEntry {
   id: string;
   name: string;
   target?: string;
-  status: 'running' | 'completed' | 'error';
+  status: "running" | "completed" | "error";
   startTime: Date;
   endTime?: Date;
 }
@@ -54,19 +54,19 @@ export interface AgentEntry {
   type: string;
   model?: string;
   description?: string;
-  status: 'running' | 'completed';
+  status: "running" | "completed";
   startTime: Date;
   endTime?: Date;
 }
 
 export interface TodoItem {
   content: string;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: "pending" | "in_progress" | "completed";
 }
 
 export interface UsageData {
-  fiveHour: number | null;  // 0-100 percentage, null if unavailable
-  sevenDay: number | null;  // 0-100 percentage, null if unavailable
+  fiveHour: number | null; // 0-100 percentage, null if unavailable
+  sevenDay: number | null; // 0-100 percentage, null if unavailable
   fiveHourResetAt: Date | null;
   sevenDayResetAt: Date | null;
 }
@@ -97,15 +97,22 @@ export interface TranscriptData {
   sessionStart?: Date;
   sessionName?: string;
   sessionTokens?: SessionTokenUsage;
+  /**
+   * Cumulative count of every `tool_use` block encountered in the transcript,
+   * keyed by tool name. Populated independently of `tools` / `agents` (which
+   * are capped by `.slice(-20)` / `.slice(-10)`), so it always reflects the
+   * full session total — required for Read:Edit ratio and baseline metrics.
+   */
+  toolCounts: Record<string, number>;
 }
 
-export type ComponentStatus = 'active' | 'installed' | 'missing';
-export type HealthTrend = 'up' | 'down' | 'stable';
+export type ComponentStatus = "active" | "installed" | "missing";
+export type HealthTrend = "up" | "down" | "stable";
 
 export interface HarnessComponentState {
   id: string;
   name: string;
-  type: 'guard' | 'sensor';
+  type: "guard" | "sensor";
   status: ComponentStatus;
   eventCount: number;
   blockCount: number;
@@ -121,6 +128,20 @@ export interface HarnessRecentEvent {
   severity?: string;
 }
 
+export interface HarnessReadEditRatio {
+  ratio: number;
+  reads: number;
+  edits: number;
+  writes: number;
+}
+
+export interface HarnessBaseline {
+  rEMedian: number | null;
+  rEMad: number | null;
+  rEZScore: number | null;
+  sessionCount: number;
+}
+
 export interface HarnessHealth {
   score: number;
   trend: HealthTrend;
@@ -129,6 +150,12 @@ export interface HarnessHealth {
   totalViolations: number;
   sessionEvents: number;
   recentEvents: HarnessRecentEvent[];
+  /** Read / (Edit + Write) ratio for the current session; undefined when unavailable. */
+  readEditRatio?: HarnessReadEditRatio;
+  /** Per-category violation counts (e.g. ownership-deflection, premature-stop). */
+  violationBreakdown?: Record<string, number>;
+  /** Cross-session baseline + z-score for the Read:Edit ratio. */
+  baseline?: HarnessBaseline;
 }
 
 export interface RenderContext {

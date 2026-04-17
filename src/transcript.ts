@@ -1,10 +1,16 @@
-import * as fs from 'fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import * as readline from 'readline';
-import { createHash } from 'node:crypto';
-import { getHudPluginDir } from './claude-config-dir.js';
-import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, SessionTokenUsage } from './types.js';
+import * as fs from "fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import * as readline from "readline";
+import { createHash } from "node:crypto";
+import { getHudPluginDir } from "./claude-config-dir.js";
+import type {
+  TranscriptData,
+  ToolEntry,
+  AgentEntry,
+  TodoItem,
+  SessionTokenUsage,
+} from "./types.js";
 
 interface TranscriptLine {
   timestamp?: string;
@@ -36,12 +42,15 @@ interface TranscriptFileState {
   size: number;
 }
 
-interface SerializedToolEntry extends Omit<ToolEntry, 'startTime' | 'endTime'> {
+interface SerializedToolEntry extends Omit<ToolEntry, "startTime" | "endTime"> {
   startTime: string;
   endTime?: string;
 }
 
-interface SerializedAgentEntry extends Omit<AgentEntry, 'startTime' | 'endTime'> {
+interface SerializedAgentEntry extends Omit<
+  AgentEntry,
+  "startTime" | "endTime"
+> {
   startTime: string;
   endTime?: string;
 }
@@ -53,6 +62,7 @@ interface SerializedTranscriptData {
   sessionStart?: string;
   sessionName?: string;
   sessionTokens?: SessionTokenUsage;
+  toolCounts?: Record<string, number>;
 }
 
 interface TranscriptCacheFile {
@@ -64,15 +74,17 @@ interface TranscriptCacheFile {
 let createReadStreamImpl: typeof fs.createReadStream = fs.createReadStream;
 
 function normalizeTokenCount(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return 0;
   }
 
   return Math.max(0, Math.trunc(value));
 }
 
-function normalizeSessionTokens(tokens: unknown): SessionTokenUsage | undefined {
-  if (!tokens || typeof tokens !== 'object') {
+function normalizeSessionTokens(
+  tokens: unknown,
+): SessionTokenUsage | undefined {
+  if (!tokens || typeof tokens !== "object") {
     return undefined;
   }
 
@@ -85,12 +97,23 @@ function normalizeSessionTokens(tokens: unknown): SessionTokenUsage | undefined 
   };
 }
 
-function getTranscriptCachePath(transcriptPath: string, homeDir: string): string {
-  const hash = createHash('sha256').update(path.resolve(transcriptPath)).digest('hex');
-  return path.join(getHudPluginDir(homeDir), 'transcript-cache', `${hash}.json`);
+function getTranscriptCachePath(
+  transcriptPath: string,
+  homeDir: string,
+): string {
+  const hash = createHash("sha256")
+    .update(path.resolve(transcriptPath))
+    .digest("hex");
+  return path.join(
+    getHudPluginDir(homeDir),
+    "transcript-cache",
+    `${hash}.json`,
+  );
 }
 
-function readTranscriptFileState(transcriptPath: string): TranscriptFileState | null {
+function readTranscriptFileState(
+  transcriptPath: string,
+): TranscriptFileState | null {
   try {
     const stat = fs.statSync(transcriptPath);
     if (!stat.isFile()) {
@@ -105,7 +128,9 @@ function readTranscriptFileState(transcriptPath: string): TranscriptFileState | 
   }
 }
 
-function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData {
+function serializeTranscriptData(
+  data: TranscriptData,
+): SerializedTranscriptData {
   return {
     tools: data.tools.map((tool) => ({
       ...tool,
@@ -121,10 +146,13 @@ function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData
     sessionStart: data.sessionStart?.toISOString(),
     sessionName: data.sessionName,
     sessionTokens: data.sessionTokens,
+    toolCounts: { ...data.toolCounts },
   };
 }
 
-function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptData {
+function deserializeTranscriptData(
+  data: SerializedTranscriptData,
+): TranscriptData {
   return {
     tools: data.tools.map((tool) => ({
       ...tool,
@@ -140,18 +168,35 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
     sessionStart: data.sessionStart ? new Date(data.sessionStart) : undefined,
     sessionName: data.sessionName,
     sessionTokens: normalizeSessionTokens(data.sessionTokens),
+    toolCounts: normalizeToolCounts(data.toolCounts),
   };
 }
 
-function readTranscriptCache(transcriptPath: string, state: TranscriptFileState): TranscriptData | null {
+function normalizeToolCounts(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object") {
+    return {};
+  }
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      out[key] = Math.trunc(value);
+    }
+  }
+  return out;
+}
+
+function readTranscriptCache(
+  transcriptPath: string,
+  state: TranscriptFileState,
+): TranscriptData | null {
   try {
     const cachePath = getTranscriptCachePath(transcriptPath, os.homedir());
-    const raw = fs.readFileSync(cachePath, 'utf8');
+    const raw = fs.readFileSync(cachePath, "utf8");
     const parsed = JSON.parse(raw) as TranscriptCacheFile;
     if (
-      parsed.transcriptPath !== path.resolve(transcriptPath)
-      || parsed.transcriptState?.mtimeMs !== state.mtimeMs
-      || parsed.transcriptState?.size !== state.size
+      parsed.transcriptPath !== path.resolve(transcriptPath) ||
+      parsed.transcriptState?.mtimeMs !== state.mtimeMs ||
+      parsed.transcriptState?.size !== state.size
     ) {
       return null;
     }
@@ -162,7 +207,11 @@ function readTranscriptCache(transcriptPath: string, state: TranscriptFileState)
   }
 }
 
-function writeTranscriptCache(transcriptPath: string, state: TranscriptFileState, data: TranscriptData): void {
+function writeTranscriptCache(
+  transcriptPath: string,
+  state: TranscriptFileState,
+  data: TranscriptData,
+): void {
   try {
     const cachePath = getTranscriptCachePath(transcriptPath, os.homedir());
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
@@ -171,17 +220,20 @@ function writeTranscriptCache(transcriptPath: string, state: TranscriptFileState
       transcriptState: state,
       data: serializeTranscriptData(data),
     };
-    fs.writeFileSync(cachePath, JSON.stringify(payload), 'utf8');
+    fs.writeFileSync(cachePath, JSON.stringify(payload), "utf8");
   } catch {
     // Cache failures are non-fatal; fall back to fresh parsing next time.
   }
 }
 
-export async function parseTranscript(transcriptPath: string): Promise<TranscriptData> {
+export async function parseTranscript(
+  transcriptPath: string,
+): Promise<TranscriptData> {
   const result: TranscriptData = {
     tools: [],
     agents: [],
     todos: [],
+    toolCounts: {},
   };
 
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
@@ -225,20 +277,36 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
 
       try {
         const entry = JSON.parse(line) as TranscriptLine;
-        if (entry.type === 'custom-title' && typeof entry.customTitle === 'string') {
+        if (
+          entry.type === "custom-title" &&
+          typeof entry.customTitle === "string"
+        ) {
           customTitle = entry.customTitle;
-        } else if (typeof entry.slug === 'string') {
+        } else if (typeof entry.slug === "string") {
           latestSlug = entry.slug;
         }
         // Accumulate token usage from assistant messages
-        if (entry.type === 'assistant' && entry.message?.usage) {
+        if (entry.type === "assistant" && entry.message?.usage) {
           const usage = entry.message.usage;
           sessionTokens.inputTokens += normalizeTokenCount(usage.input_tokens);
-          sessionTokens.outputTokens += normalizeTokenCount(usage.output_tokens);
-          sessionTokens.cacheCreationTokens += normalizeTokenCount(usage.cache_creation_input_tokens);
-          sessionTokens.cacheReadTokens += normalizeTokenCount(usage.cache_read_input_tokens);
+          sessionTokens.outputTokens += normalizeTokenCount(
+            usage.output_tokens,
+          );
+          sessionTokens.cacheCreationTokens += normalizeTokenCount(
+            usage.cache_creation_input_tokens,
+          );
+          sessionTokens.cacheReadTokens += normalizeTokenCount(
+            usage.cache_read_input_tokens,
+          );
         }
-        processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, result);
+        processEntry(
+          entry,
+          toolMap,
+          agentMap,
+          taskIdToIndex,
+          latestTodos,
+          result,
+        );
       } catch {
         // Skip malformed lines
       }
@@ -261,7 +329,9 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   return result;
 }
 
-export function _setCreateReadStreamForTests(impl: typeof fs.createReadStream | null): void {
+export function _setCreateReadStreamForTests(
+  impl: typeof fs.createReadStream | null,
+): void {
   createReadStreamImpl = impl ?? fs.createReadStream;
 }
 
@@ -271,7 +341,7 @@ function processEntry(
   agentMap: Map<string, AgentEntry>,
   taskIdToIndex: Map<string, number>,
   latestTodos: TodoItem[],
-  result: TranscriptData
+  result: TranscriptData,
 ): void {
   const timestamp = entry.timestamp ? new Date(entry.timestamp) : new Date();
 
@@ -283,27 +353,34 @@ function processEntry(
   if (!content || !Array.isArray(content)) return;
 
   for (const block of content) {
-    if (block.type === 'tool_use' && block.id && block.name) {
+    if (block.type === "tool_use" && block.id && block.name) {
+      // Independent full-session tally (unaffected by later slice(-20)).
+      // Must run before any branch that routes to toolMap/agentMap.
+      result.toolCounts[block.name] = (result.toolCounts[block.name] ?? 0) + 1;
+
       const toolEntry: ToolEntry = {
         id: block.id,
         name: block.name,
         target: extractTarget(block.name, block.input),
-        status: 'running',
+        status: "running",
         startTime: timestamp,
       };
 
-      if (block.name === 'Task' || block.name === 'Agent') {
+      if (block.name === "Task" || block.name === "Agent") {
         const input = block.input as Record<string, unknown>;
         const agentEntry: AgentEntry = {
           id: block.id,
-          type: (input?.subagent_type as string) ?? (input?.name as string) ?? 'agent',
+          type:
+            (input?.subagent_type as string) ??
+            (input?.name as string) ??
+            "agent",
           model: (input?.model as string) ?? undefined,
           description: (input?.description as string) ?? undefined,
-          status: 'running',
+          status: "running",
           startTime: timestamp,
         };
         agentMap.set(block.id, agentEntry);
-      } else if (block.name === 'TodoWrite') {
+      } else if (block.name === "TodoWrite") {
         const input = block.input as { todos?: TodoItem[] };
         if (input?.todos && Array.isArray(input.todos)) {
           // Build reverse map: content → taskIds from existing state
@@ -332,32 +409,40 @@ function processEntry(
             }
           }
         }
-      } else if (block.name === 'TaskCreate') {
+      } else if (block.name === "TaskCreate") {
         const input = block.input as Record<string, unknown>;
-        const subject = typeof input?.subject === 'string' ? input.subject : '';
-        const description = typeof input?.description === 'string' ? input.description : '';
-        const content = subject || description || 'Untitled task';
-        const status = normalizeTaskStatus(input?.status) ?? 'pending';
+        const subject = typeof input?.subject === "string" ? input.subject : "";
+        const description =
+          typeof input?.description === "string" ? input.description : "";
+        const content = subject || description || "Untitled task";
+        const status = normalizeTaskStatus(input?.status) ?? "pending";
         latestTodos.push({ content, status });
 
         const rawTaskId = input?.taskId;
-        const taskId = typeof rawTaskId === 'string' || typeof rawTaskId === 'number'
-          ? String(rawTaskId)
-          : block.id;
+        const taskId =
+          typeof rawTaskId === "string" || typeof rawTaskId === "number"
+            ? String(rawTaskId)
+            : block.id;
         if (taskId) {
           taskIdToIndex.set(taskId, latestTodos.length - 1);
         }
-      } else if (block.name === 'TaskUpdate') {
+      } else if (block.name === "TaskUpdate") {
         const input = block.input as Record<string, unknown>;
-        const index = resolveTaskIndex(input?.taskId, taskIdToIndex, latestTodos);
+        const index = resolveTaskIndex(
+          input?.taskId,
+          taskIdToIndex,
+          latestTodos,
+        );
         if (index !== null) {
           const status = normalizeTaskStatus(input?.status);
           if (status) {
             latestTodos[index].status = status;
           }
 
-          const subject = typeof input?.subject === 'string' ? input.subject : '';
-          const description = typeof input?.description === 'string' ? input.description : '';
+          const subject =
+            typeof input?.subject === "string" ? input.subject : "";
+          const description =
+            typeof input?.description === "string" ? input.description : "";
           const content = subject || description;
           if (content) {
             latestTodos[index].content = content;
@@ -368,37 +453,40 @@ function processEntry(
       }
     }
 
-    if (block.type === 'tool_result' && block.tool_use_id) {
+    if (block.type === "tool_result" && block.tool_use_id) {
       const tool = toolMap.get(block.tool_use_id);
       if (tool) {
-        tool.status = block.is_error ? 'error' : 'completed';
+        tool.status = block.is_error ? "error" : "completed";
         tool.endTime = timestamp;
       }
 
       const agent = agentMap.get(block.tool_use_id);
       if (agent) {
-        agent.status = 'completed';
+        agent.status = "completed";
         agent.endTime = timestamp;
       }
     }
   }
 }
 
-function extractTarget(toolName: string, input?: Record<string, unknown>): string | undefined {
+function extractTarget(
+  toolName: string,
+  input?: Record<string, unknown>,
+): string | undefined {
   if (!input) return undefined;
 
   switch (toolName) {
-    case 'Read':
-    case 'Write':
-    case 'Edit':
+    case "Read":
+    case "Write":
+    case "Edit":
       return (input.file_path as string) ?? (input.path as string);
-    case 'Glob':
+    case "Glob":
       return input.pattern as string;
-    case 'Grep':
+    case "Grep":
       return input.pattern as string;
-    case 'Bash':
+    case "Bash":
       const cmd = input.command as string;
-      return cmd?.slice(0, 30) + (cmd?.length > 30 ? '...' : '');
+      return cmd?.slice(0, 30) + (cmd?.length > 30 ? "..." : "");
   }
   return undefined;
 }
@@ -406,12 +494,12 @@ function extractTarget(toolName: string, input?: Record<string, unknown>): strin
 function resolveTaskIndex(
   taskId: unknown,
   taskIdToIndex: Map<string, number>,
-  latestTodos: TodoItem[]
+  latestTodos: TodoItem[],
 ): number | null {
-  if (typeof taskId === 'string' || typeof taskId === 'number') {
+  if (typeof taskId === "string" || typeof taskId === "number") {
     const key = String(taskId);
     const mapped = taskIdToIndex.get(key);
-    if (typeof mapped === 'number') {
+    if (typeof mapped === "number") {
       return mapped;
     }
 
@@ -426,20 +514,20 @@ function resolveTaskIndex(
   return null;
 }
 
-function normalizeTaskStatus(status: unknown): TodoItem['status'] | null {
-  if (typeof status !== 'string') return null;
+function normalizeTaskStatus(status: unknown): TodoItem["status"] | null {
+  if (typeof status !== "string") return null;
 
   switch (status) {
-    case 'pending':
-    case 'not_started':
-      return 'pending';
-    case 'in_progress':
-    case 'running':
-      return 'in_progress';
-    case 'completed':
-    case 'complete':
-    case 'done':
-      return 'completed';
+    case "pending":
+    case "not_started":
+      return "pending";
+    case "in_progress":
+    case "running":
+      return "in_progress";
+    case "completed":
+    case "complete":
+    case "done":
+      return "completed";
     default:
       return null;
   }
