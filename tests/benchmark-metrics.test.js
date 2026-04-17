@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { computeMetrics, countViolations } from "../benchmark/metrics.js";
+import {
+  computeMetrics,
+  countViolations,
+  buildViolationMap,
+} from "../benchmark/metrics.js";
 
 async function writeTranscript(lines) {
   const dir = await mkdtemp(path.join(tmpdir(), "met-"));
@@ -91,4 +95,31 @@ test("countViolations remains backward-compatible", () => {
   assert.equal(countViolations(events, "a"), 2);
   assert.equal(countViolations(events, "b"), 1);
   assert.equal(countViolations(events, "c"), 0);
+});
+
+test("buildViolationMap counts violations per session in one pass", () => {
+  const events = [
+    { event: "lifecycle", session: "a" },
+    { event: "violation", session: "a" },
+    { event: "violation", session: "a" },
+    { event: "violation", session: "b" },
+    { event: "lifecycle", session: "c" },
+    { event: "violation" }, // no session — must not throw, must not count
+    { event: "violation", session: "b" },
+  ];
+  const map = buildViolationMap(events);
+  assert.ok(map instanceof Map);
+  // Sessions that had violations are counted exactly.
+  assert.equal(map.get("a"), 2);
+  assert.equal(map.get("b"), 2);
+  // Sessions with no violations are absent; callers use `?? 0`.
+  assert.equal(map.get("c"), undefined);
+  assert.equal(map.get("unknown"), undefined);
+  assert.equal(map.get("c") ?? 0, 0);
+});
+
+test("buildViolationMap handles empty events", () => {
+  const map = buildViolationMap([]);
+  assert.ok(map instanceof Map);
+  assert.equal(map.size, 0);
 });

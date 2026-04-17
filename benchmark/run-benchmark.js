@@ -8,7 +8,7 @@ import {
   extractSessionId,
   classifySession,
 } from "./classifier.js";
-import { computeMetrics, loadEvents, countViolations } from "./metrics.js";
+import { computeMetrics, loadEvents, buildViolationMap } from "./metrics.js";
 import { buildReport } from "./report.js";
 
 async function walkJsonl(dir, out = []) {
@@ -44,6 +44,9 @@ async function main() {
   );
 
   const events = await loadEvents(eventsPath);
+  // Build a single session -> violation count map once; per-transcript
+  // lookup becomes O(1) instead of a full events scan per session.
+  const violationMap = buildViolationMap(events);
 
   const enabled = [];
   const disabled = [];
@@ -60,7 +63,7 @@ async function main() {
       skipped += 1;
       continue;
     }
-    metrics.violations_per_session = countViolations(events, sid);
+    metrics.violations_per_session = violationMap.get(sid) ?? 0;
     const group = classifySession(sid, enabledIds);
     if (group === "enabled") enabled.push(metrics);
     else if (group === "disabled") disabled.push(metrics);

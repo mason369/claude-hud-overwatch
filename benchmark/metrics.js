@@ -103,6 +103,21 @@ export function countViolations(events, sessionId) {
   return count;
 }
 
+// One-pass O(N) aggregation of violation counts per session id. Callers that
+// need counts for many sessions (e.g. run-benchmark iterating 1800+ transcripts)
+// build this once and look up per-session via `map.get(sid) ?? 0`, turning the
+// previous O(sessions × events) outer loop into O(events + sessions).
+export function buildViolationMap(events) {
+  const map = new Map();
+  for (const event of events) {
+    if (event?.event !== "violation") continue;
+    const sid = event.session;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    map.set(sid, (map.get(sid) ?? 0) + 1);
+  }
+  return map;
+}
+
 export async function loadEvents(eventsPath) {
   let text;
   try {
