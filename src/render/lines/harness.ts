@@ -566,9 +566,18 @@ export function calculateHealth(input: HealthInput): number {
     }
   }
 
+  let activeInstalledCount = 0;
+  for (const componentId of activeIds) {
+    if (installedIds.has(componentId)) {
+      activeInstalledCount += 1;
+    }
+  }
+
   const baseScore = (installedWeight / TOTAL_WEIGHT) * 60;
   const activeScore =
-    installedIds.size > 0 ? (activeIds.size / installedIds.size) * 20 : 0;
+    installedIds.size > 0
+      ? (activeInstalledCount / installedIds.size) * 20
+      : 0;
   const stabilityScore = Math.min(nonViolationCount / 10, 1) * 20;
   const violationPenalty = Math.min(violationCount * 5, 20);
 

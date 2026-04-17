@@ -258,6 +258,19 @@ test('calculateHealth active bonus requires installed components', () => {
   assert.equal(score, 20, 'active bonus should be 0 when no components installed');
 });
 
+test('calculateHealth only counts active components that are also installed', () => {
+  const score = calculateHealth({
+    installedIds: new Set(['agent-opus']),
+    activeIds: new Set(['agent-opus', 'safety-gate']),
+    nonViolationCount: 0,
+    violationCount: 0,
+  });
+
+  // Base: (1/25) * 60 = 2.4 => rounds to 2
+  // Active bonus should be 1/1 * 20 = 20, not 2/1 * 20 = 40
+  assert.equal(score, 22, 'uninstalled active components should not inflate the active bonus');
+});
+
 test('matchesSession requires exact identity matches and normalizes transcript paths', () => {
   assert.equal(matchesSession('session-alpha', undefined, { sessionId: 'session-alpha' }), true);
   assert.equal(matchesSession('session-alpha-extra', undefined, { sessionId: 'session-alpha' }), false);

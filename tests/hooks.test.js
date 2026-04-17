@@ -1732,3 +1732,124 @@ test("cbm gate allows code reads before MCP discovery is used", async (t) => {
     await rm(homeDir, { recursive: true, force: true });
   }
 });
+
+test("edit-quality-guard R1 blocks Edit with short single-line old_string", async (t) => {
+  const homeDir = await mkdtemp(
+    path.join(tmpdir(), "claude-hud-edit-quality-home-"),
+  );
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+
+    const result = runHook("edit-quality-guard.sh", {
+      input: JSON.stringify({
+        tool_name: "Edit",
+        tool_input: {
+          file_path: "/tmp/scratch.js",
+          old_string: "foo",
+          new_string: "bar",
+        },
+        session_id: "session-edit-quality-r1",
+        transcript_path: "C:/tmp/session-edit-quality-r1.jsonl",
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    if (skipIfSpawnUnavailable(result, t)) return;
+
+    assert.equal(
+      result.status,
+      2,
+      `short single-line old_string should be blocked\n${result.stdout}\n${result.stderr}`,
+    );
+    assert.match(result.stderr, /Edit Quality Guard R1/);
+  } finally {
+    restoreEnvVar("HOME", originalHome);
+    restoreEnvVar("USERPROFILE", originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test("edit-quality-guard R1 allows Edit with multi-line old_string even when short", async (t) => {
+  const homeDir = await mkdtemp(
+    path.join(tmpdir(), "claude-hud-edit-quality-home-"),
+  );
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+
+    const result = runHook("edit-quality-guard.sh", {
+      input: JSON.stringify({
+        tool_name: "Edit",
+        tool_input: {
+          file_path: "/tmp/scratch.js",
+          old_string: "a\nb",
+          new_string: "c\nd",
+        },
+        session_id: "session-edit-quality-r1-multi",
+        transcript_path: "C:/tmp/session-edit-quality-r1-multi.jsonl",
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    if (skipIfSpawnUnavailable(result, t)) return;
+
+    assert.equal(
+      result.status,
+      0,
+      `multi-line old_string should pass R1 even when short\n${result.stdout}\n${result.stderr}`,
+    );
+  } finally {
+    restoreEnvVar("HOME", originalHome);
+    restoreEnvVar("USERPROFILE", originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+test("edit-quality-guard R1 allows Edit with long single-line old_string", async (t) => {
+  const homeDir = await mkdtemp(
+    path.join(tmpdir(), "claude-hud-edit-quality-home-"),
+  );
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  try {
+    await prepareHookHome(homeDir);
+
+    const result = runHook("edit-quality-guard.sh", {
+      input: JSON.stringify({
+        tool_name: "Edit",
+        tool_input: {
+          file_path: "/tmp/scratch.js",
+          old_string: "const longEnoughToken = 42;",
+          new_string: "const renamedToken = 42;",
+        },
+        session_id: "session-edit-quality-r1-long",
+        transcript_path: "C:/tmp/session-edit-quality-r1-long.jsonl",
+      }),
+      env: { ...process.env, HOME: homeDir, USERPROFILE: homeDir },
+    });
+
+    if (skipIfSpawnUnavailable(result, t)) return;
+
+    assert.equal(
+      result.status,
+      0,
+      `long single-line old_string should pass R1\n${result.stdout}\n${result.stderr}`,
+    );
+  } finally {
+    restoreEnvVar("HOME", originalHome);
+    restoreEnvVar("USERPROFILE", originalUserProfile);
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
