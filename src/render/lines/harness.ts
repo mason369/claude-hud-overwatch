@@ -63,7 +63,7 @@ const HARNESS_COMPONENTS: HarnessComponentDef[] = [
     type: "guard",
     priority: "normal",
     weight: 1,
-    scripts: ["effort-max-enforcer.sh"],
+    scripts: ["effort-max-enforcer.sh", "user-prompt-guard.sh"],
   },
   {
     id: "safety-gate",
@@ -103,7 +103,7 @@ const HARNESS_COMPONENTS: HarnessComponentDef[] = [
     type: "sensor",
     priority: "critical",
     weight: 3,
-    scripts: ["completion-gate.sh"],
+    scripts: ["completion-gate.sh", "stop-gate.sh"],
   },
   {
     id: "stop-phrase-guard",
@@ -111,7 +111,7 @@ const HARNESS_COMPONENTS: HarnessComponentDef[] = [
     type: "sensor",
     priority: "high",
     weight: 2,
-    scripts: ["stop-phrase-guard.sh"],
+    scripts: ["stop-phrase-guard.sh", "stop-gate.sh"],
   },
   {
     id: "read-tracker",
@@ -159,7 +159,7 @@ const HARNESS_COMPONENTS: HarnessComponentDef[] = [
     type: "sensor",
     priority: "high",
     weight: 2,
-    scripts: ["prompt-rescuer.sh"],
+    scripts: ["prompt-rescuer.sh", "user-prompt-guard.sh"],
   },
   {
     id: "session-summary",
@@ -167,7 +167,7 @@ const HARNESS_COMPONENTS: HarnessComponentDef[] = [
     type: "sensor",
     priority: "normal",
     weight: 1,
-    scripts: ["session-summary.sh"],
+    scripts: ["session-summary.sh", "stop-gate.sh"],
   },
 ];
 
@@ -178,13 +178,18 @@ const TOTAL_WEIGHT = HARNESS_COMPONENTS.reduce(
 const COMPONENT_BY_ID = new Map(
   HARNESS_COMPONENTS.map((component) => [component.id, component]),
 );
-const SCRIPT_TO_COMPONENT_ID = new Map(
-  HARNESS_COMPONENTS.flatMap((component) =>
-    component.scripts.map(
-      (script) => [script.toLowerCase(), component.id] as const,
-    ),
-  ),
-);
+const SCRIPT_TO_COMPONENT_IDS: Map<string, string[]> = (() => {
+  const map = new Map<string, string[]>();
+  for (const component of HARNESS_COMPONENTS) {
+    for (const script of component.scripts) {
+      const key = script.toLowerCase();
+      const existing = map.get(key) ?? [];
+      existing.push(component.id);
+      map.set(key, existing);
+    }
+  }
+  return map;
+})();
 
 const COMPONENT_LABEL_KEY_BY_ID = {
   "agent-opus": "harnessComponent.agent-opus",
@@ -491,14 +496,17 @@ function extractHookCommands(config: unknown): string[] {
   return commands;
 }
 
-function resolveComponentIdFromCommand(command: string): string | undefined {
+function resolveComponentIdsFromCommand(command: string): string[] {
   const normalized = command.replace(/\\/g, "/").toLowerCase();
-  for (const [scriptName, componentId] of SCRIPT_TO_COMPONENT_ID.entries()) {
+  const matched: string[] = [];
+  for (const [scriptName, componentIds] of SCRIPT_TO_COMPONENT_IDS.entries()) {
     if (normalized.includes(scriptName)) {
-      return componentId;
+      for (const id of componentIds) {
+        if (!matched.includes(id)) matched.push(id);
+      }
     }
   }
-  return undefined;
+  return matched;
 }
 
 function collectSettingsPaths(cwd?: string): string[] {
@@ -538,8 +546,7 @@ function detectInstalledComponents(cwd?: string): Set<string> {
         fs.readFileSync(settingsPath, "utf8"),
       ) as unknown;
       for (const command of extractHookCommands(parsed)) {
-        const componentId = resolveComponentIdFromCommand(command);
-        if (componentId) {
+        for (const componentId of resolveComponentIdsFromCommand(command)) {
           installed.add(componentId);
         }
       }
@@ -1187,6 +1194,9 @@ export function renderHarnessLines(ctx: RenderContext): string[] {
     );
     const guardParts = guards.map((component) => {
       const shortName = getComponentLabel(component.id, component.name);
+      if (component.status === "disabled") {
+        return dim(`\u2717${shortName}`);
+      }
       if (component.status === "missing") {
         return red(`\u2717${shortName}`);
       }
@@ -1207,6 +1217,9 @@ export function renderHarnessLines(ctx: RenderContext): string[] {
     );
     const sensorParts = sensors.map((component) => {
       const shortName = getComponentLabel(component.id, component.name);
+      if (component.status === "disabled") {
+        return dim(`\u2717${shortName}`);
+      }
       if (component.status === "missing") {
         return red(`\u2717${shortName}`);
       }
@@ -1328,12 +1341,15 @@ export function getHarnessHealth(
     }
   }
 
+  const disabledIds = new Set(config.harness.disabledComponents ?? []);
   const components: HarnessComponentState[] = HARNESS_COMPONENTS.map(
     (component) => {
       const eventCount = componentEventCounts.get(component.id) ?? 0;
       const blockCount = componentBlockCounts.get(component.id) ?? 0;
       let status: ComponentStatus = "missing";
-      if (installedIds.has(component.id)) {
+      if (disabledIds.has(component.id)) {
+        status = "disabled";
+      } else if (installedIds.has(component.id)) {
         status = activeIds.has(component.id) ? "active" : "installed";
       }
 

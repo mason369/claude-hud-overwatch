@@ -127,6 +127,7 @@ export interface HudConfig {
     showGuards: boolean;
     showSensors: boolean;
     showStats: boolean;
+    disabledComponents: string[];
     scoreThresholds: {
       warning: number;
       critical: number;
@@ -208,6 +209,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     showGuards: true,
     showSensors: true,
     showStats: true,
+    disabledComponents: [],
     scoreThresholds: {
       warning: 70,
       critical: 50,
@@ -603,6 +605,11 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
       typeof migrated.harness?.showStats === "boolean"
         ? migrated.harness.showStats
         : DEFAULT_CONFIG.harness.showStats,
+    disabledComponents: Array.isArray(migrated.harness?.disabledComponents)
+      ? migrated.harness.disabledComponents.filter(
+          (item): item is string => typeof item === "string",
+        )
+      : [...DEFAULT_CONFIG.harness.disabledComponents],
     scoreThresholds: {
       warning:
         validateThreshold(migrated.harness?.scoreThresholds?.warning, 100) ||

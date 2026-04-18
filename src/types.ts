@@ -112,7 +112,7 @@ export interface TranscriptData {
   interruptCount: number;
 }
 
-export type ComponentStatus = "active" | "installed" | "missing";
+export type ComponentStatus = "active" | "installed" | "missing" | "disabled";
 export type HealthTrend = "up" | "down" | "stable";
 
 export interface HarnessComponentState {
